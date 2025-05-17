@@ -1,0 +1,16 @@
+2025-05-17 16:33:07 - Exception: Could not find a part of the path 'D:\Projects\FolderWatcherService\AWS2.FolderWatcherService\AWS2.FolderWatcherService\bin\Debug\net9.0\Logs\Log_20250517.txt'.
+Stack Trace:    at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+   at System.IO.File.OpenHandle(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize)
+   at System.IO.File.WriteToFile(String path, FileMode mode, ReadOnlySpan`1 contents, Encoding encoding)
+   at System.IO.File.AppendAllText(String path, String contents, Encoding encoding)
+   at AWS2.FolderWatcherService.Worker.LogMessage(String message) in D:\Projects\FolderWatcherService\AWS2.FolderWatcherService\AWS2.FolderWatcherService\Worker.cs:line 183
+----------------------------------------
+2025-05-17 16:33:25 - Exception: Could not find a part of the path 'D:\Projects\FolderWatcherService\AWS2.FolderWatcherService\AWS2.FolderWatcherService\bin\Debug\net9.0\Logs\Log_20250517.txt'.
+Stack Trace:    at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+   at System.IO.File.OpenHandle(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize)
+   at System.IO.File.WriteToFile(String path, FileMode mode, ReadOnlySpan`1 contents, Encoding encoding)
+   at System.IO.File.AppendAllText(String path, String contents, Encoding encoding)
+   at AWS2.FolderWatcherService.Worker.LogMessage(String message) in D:\Projects\FolderWatcherService\AWS2.FolderWatcherService\AWS2.FolderWatcherService\Worker.cs:line 183
+----------------------------------------

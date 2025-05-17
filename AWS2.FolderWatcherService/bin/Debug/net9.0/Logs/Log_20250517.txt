@@ -1,0 +1,54 @@
+2025-05-17 16:34:21 : Starting folder watcher service...
+2025-05-17 16:34:33 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 16:34:36 : Started watching folder: ./watched/outbound
+2025-05-17 16:34:53 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00001.csv
+2025-05-17 16:35:16 : WARNING: API call failed: NotFound - 
+2025-05-17 16:35:17 : WARNING: API response was not successful for file: GJSW_250516_1245_BDC00001.csv
+2025-05-17 16:36:03 : File Deleted: D:\FileWatcherDemo\GJSW_250516_1245_BDC00001.csv
+2025-05-17 16:36:15 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00001.csv
+2025-05-17 16:45:04 : Starting folder watcher service...
+2025-05-17 16:45:04 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 16:45:04 : Started watching folder: D:\FileWatcherDemo2
+2025-05-17 16:45:04 : Started watching folder: ./watched/outbound
+2025-05-17 16:45:13 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00003.csv
+2025-05-17 16:50:50 : Starting folder watcher service...
+2025-05-17 16:50:50 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 16:50:50 : Started watching folder: D:\FileWatcherDemo2
+2025-05-17 16:50:50 : Started watching folder: ./watched/outbound
+2025-05-17 16:51:00 : File Deleted: D:\FileWatcherDemo\GJSW_250516_1245_BDC00003.csv
+2025-05-17 16:51:00 : File Deleted: D:\FileWatcherDemo\GJSW_250516_1245_BDC00001.csv
+2025-05-17 16:51:04 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00001.csv
+2025-05-17 16:51:44 : WARNING: API call failed: NotFound - 
+2025-05-17 16:51:48 : WARNING: API response was not successful for file: GJSW_250516_1245_BDC00001.csv
+2025-05-17 16:52:21 : Starting folder watcher service...
+2025-05-17 16:52:22 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 16:52:22 : Started watching folder: D:\FileWatcherDemo2
+2025-05-17 16:52:22 : Started watching folder: ./watched/outbound
+2025-05-17 16:52:51 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00003.csv
+2025-05-17 16:54:01 : WARNING: API call failed: NotFound - 
+2025-05-17 16:54:02 : WARNING: API response was not successful for file: GJSW_250516_1245_BDC00003.csv
+2025-05-17 16:54:13 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00005.csv
+2025-05-17 16:54:17 : WARNING: API call failed: NotFound - 
+2025-05-17 16:54:18 : WARNING: API response was not successful for file: GJSW_250516_1245_BDC00005.csv
+2025-05-17 16:55:09 : Starting folder watcher service...
+2025-05-17 16:55:09 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 16:55:09 : Started watching folder: D:\FileWatcherDemo2
+2025-05-17 16:55:09 : Started watching folder: ./watched/outbound
+2025-05-17 16:55:15 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00006.csv
+2025-05-17 16:55:54 : WARNING: API call failed: NotFound - 
+2025-05-17 16:58:04 : Starting folder watcher service...
+2025-05-17 16:58:04 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 16:58:04 : Started watching folder: D:\FileWatcherDemo2
+2025-05-17 16:58:04 : Started watching folder: ./watched/outbound
+2025-05-17 16:58:10 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00008.csv
+2025-05-17 17:04:29 : Starting folder watcher service...
+2025-05-17 17:04:29 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 17:04:29 : Started watching folder: D:\FileWatcherDemo2
+2025-05-17 17:04:29 : Started watching folder: ./watched/outbound
+2025-05-17 17:04:37 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00009.csv
+2025-05-17 17:05:37 : Starting folder watcher service...
+2025-05-17 17:05:37 : Started watching folder: D:\FileWatcherDemo
+2025-05-17 17:05:37 : Started watching folder: D:\FileWatcherDemo2
+2025-05-17 17:05:37 : Started watching folder: ./watched/outbound
+2025-05-17 17:05:42 : File Created: D:\FileWatcherDemo\GJSW_250516_1245_BDC00010.csv
+2025-05-17 17:06:00 : Complete processing: GJSW_250516_1245_BDC00010.csv
