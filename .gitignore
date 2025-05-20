@@ -383,3 +383,7 @@ AWS2.FolderWatcherService/bin/Debug/net9.0/AWS2.FolderWatcherService.exe
 AWS2.FolderWatcherService/bin/Debug/net9.0/AWS2.FolderWatcherService.dll
 AWS2.FolderWatcherService/bin/Debug/net9.0/appsettings.json
 AWS2.FolderWatcherService/bin/Debug/net9.0/AppLogs/Log_2025-05-17.txt
+/AWS2.FolderWatcherService/obj/Debug/net9.0/AWS2.FolderWatcherService.AssemblyInfo.cs
+/AWS2.FolderWatcherService/obj/Debug/net9.0/AWS2.FolderWatcherService.AssemblyInfoInputs.cache
+/AWS2.FolderWatcherService/obj/Debug/net9.0/AWS2.FolderWatcherService.assets.cache
+/AWS2.FolderWatcherService/obj/Debug/net9.0/AWS2.FolderWatcherService.GeneratedMSBuildEditorConfig.editorconfig
