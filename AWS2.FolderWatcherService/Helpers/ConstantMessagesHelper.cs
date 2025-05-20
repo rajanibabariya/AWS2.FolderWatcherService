@@ -8,6 +8,8 @@ namespace AWS2.FolderWatcherService.Helpers
 {
     class ConstantMessagesHelper
     {
+        public static string companyName = "Azista Industries Pvt. Ltd.";
+        public static string applicationName = "AWS2 - Folder Watcher Service";
     }
 
     public class APIURLList

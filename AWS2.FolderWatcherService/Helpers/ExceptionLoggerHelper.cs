@@ -1,53 +1,69 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
+using AWS2.FolderWatcherService.Services;
 
 namespace AWS2.FolderWatcherService.Helpers
 {
     public static class ExceptionLoggerHelper
     {
-        // Directory to store the error log files
         private static readonly string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ErrorLogs");
+        private static readonly SemaphoreSlim _fileLock = new SemaphoreSlim(1, 1);
+        private static DateTime _lastLogDate = DateTime.MinValue;
+        private static DateTime _lastEmailSentDate = DateTime.MinValue;
 
-        // Log file name template (based on current date)
-        private static readonly string logFileName = "Log_{0}.txt"; // E.g., Log_2025-03-01.txt
-
-        private static readonly SemaphoreSlim _fileLock = new SemaphoreSlim(1, 1); // Ensures only 1 thread at a time
-
-        // Async method to log exceptions to a text file
-        public static async Task LogExceptionAsync(Exception ex)
+        public static async Task LogExceptionAsync(Exception ex, INotificationService notificationService)
         {
-            await _fileLock.WaitAsync(); // Async lock
+            await _fileLock.WaitAsync();
             try
             {
-                // Ensure the log directory exists, if not, create it
                 if (!Directory.Exists(logDirectory))
                 {
                     Directory.CreateDirectory(logDirectory);
                 }
 
-                // Get current date to create a log file for each day (Log_YYYY-MM-DD.txt)
-                string datePart = DateTime.Now.ToString("yyyy-MM-dd");
-                string logFilePath = Path.Combine(logDirectory, string.Format(logFileName, datePart));
+                DateTime currentDate = DateTime.Now.Date;
 
-                // Prepare the exception details (message, stack trace, and timestamp)
-                string exceptionDetails = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} - Exception: {ex.Message}{Environment.NewLine}" +
-                                          $"Stack Trace: {ex.StackTrace}{Environment.NewLine}" +
-                                          "----------------------------------------" + Environment.NewLine;
+                // If a new day has started and yesterday's log has not been sent
+                if (currentDate > _lastEmailSentDate && notificationService != null)
+                {
+                    DateTime yesterday = currentDate.AddDays(-1);
+                    string yesterdayLogPath = Path.Combine(logDirectory, $"Log_{yesterday:yyyy-MM-dd}.txt");
 
-                // Append the exception details to the log file (creates new file if it doesn't exist)
-                await File.AppendAllTextAsync(logFilePath, exceptionDetails);
+                    if (File.Exists(yesterdayLogPath))
+                    {
+                        await notificationService.SendErrorNotification(yesterdayLogPath);
+                        _lastEmailSentDate = currentDate; // Mark email sent for the day
+                    }
+                }
+
+                _lastLogDate = currentDate;
+                string logFilePath = Path.Combine(logDirectory, $"Log_{currentDate:yyyy-MM-dd}.txt");
+
+                var logBuilder = new StringBuilder();
+                logBuilder.AppendLine("------------------------------------------------------------");
+                logBuilder.AppendLine($"Timestamp      : {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
+                logBuilder.AppendLine($"Error Message  : {ex.Message}");
+                logBuilder.AppendLine($"Stack Trace    : {ex.StackTrace}");
+
+                if (ex.InnerException != null)
+                    logBuilder.AppendLine($"Inner Exception: {ex.InnerException.Message}");
+
+                if (!string.IsNullOrWhiteSpace(ex.Source))
+                    logBuilder.AppendLine($"Source         : {ex.Source}");
+
+                if (!string.IsNullOrWhiteSpace(ex.GetType().Name))
+                    logBuilder.AppendLine($"Error Type     : {ex.GetType().Name}");
+
+                logBuilder.AppendLine();
+
+                await File.AppendAllTextAsync(logFilePath, logBuilder.ToString());
             }
             catch (Exception logException)
             {
-                // In case of an error while logging, you could log this to a different fallback location or handle accordingly
                 Console.WriteLine($"Error logging exception: {logException.Message}");
             }
             finally
             {
-                _fileLock.Release(); // Release lock
+                _fileLock.Release();
             }
         }
     }

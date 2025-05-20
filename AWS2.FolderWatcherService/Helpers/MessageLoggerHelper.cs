@@ -3,53 +3,68 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using AWS2.FolderWatcherService.Services;
 
 namespace AWS2.FolderWatcherService.Helpers
 {
     
     public static class MessageLoggerHelper
     {
-        private static readonly SemaphoreSlim _fileLock = new SemaphoreSlim(1, 1); // Ensures only 1 thread at a time
+        private static readonly SemaphoreSlim _fileLock = new(1, 1);
         private static readonly string _logFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FilesActivityLogs");
+        private static DateTime _lastLogDate = DateTime.MinValue;
+        private static string _currentLogFilePath = string.Empty;
 
-        public static async Task LogMessageAsync(string message, ILogger<Worker> _logger)
+
+        public static async Task LogMessageAsync(string message, ILogger<Worker> logger, INotificationService notificationService)
         {
-            await _fileLock.WaitAsync(); // Async lock
+            await LogInternalAsync(message, logger, notificationService);
+        }
+
+        public static async Task LogWarningAsync(string message, ILogger<Worker> logger, INotificationService notificationService)
+        {
+            await LogInternalAsync($"WARNING: {message}", logger, notificationService);
+            logger.LogWarning(message);
+        }
+
+        public static async Task LogErrorAsync(Exception ex, string context, ILogger<Worker> logger, INotificationService notificationService)
+        {
+            var errorMessage = $"ERROR: {context} - {ex.Message}";
+            await LogInternalAsync(errorMessage, logger, notificationService);
+            logger.LogError(ex, context);
+
+            // Log full exception details separately
+            await ExceptionLoggerHelper.LogExceptionAsync(ex, notificationService);
+        }
+
+
+        private static async Task LogInternalAsync(string message, ILogger<Worker> logger, INotificationService notificationService)
+        {
+            await _fileLock.WaitAsync();
             try
             {
+                EnsureLogDirectoryExists(notificationService);
+                await UpdateLogFilePathIfNeeded(notificationService);
+
                 var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
                 var logMessage = $"{timestamp} : {message}{Environment.NewLine}";
-                var logFilePath = await GetLogFilePathAsync();
 
-                await File.AppendAllTextAsync(logFilePath, logMessage);
-                _logger.LogInformation(message);
+                await File.AppendAllTextAsync(_currentLogFilePath, logMessage);
+                logger.LogInformation(message);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to write log message");
-                await ExceptionLoggerHelper.LogExceptionAsync(ex);
+                logger.LogError(ex, "Failed to write log message");
+                await ExceptionLoggerHelper.LogExceptionAsync(ex, notificationService);
             }
             finally
             {
-                _fileLock.Release(); // Release lock
+                _fileLock.Release();
             }
         }
 
-        public static async Task LogWarningAsync(string message, ILogger<Worker> _logger)
+        private static void EnsureLogDirectoryExists(INotificationService notificationService)
         {
-            _logger.LogWarning(message);
-            await LogMessageAsync($"WARNING: {message}",_logger);
-        }
-
-        public static async Task LogErrorAsync(Exception ex, string context, ILogger<Worker> _logger)
-        {
-            _logger.LogError(ex, context);
-            await LogMessageAsync($"ERROR: {context} - {ex.Message}",_logger);
-        }
-
-        private static async Task<string> GetLogFilePathAsync()
-        {
-            var currentDate = DateTime.Now.ToString("yyyyMMdd");
             if (!Directory.Exists(_logFolderPath))
             {
                 try
@@ -58,10 +73,21 @@ namespace AWS2.FolderWatcherService.Helpers
                 }
                 catch (Exception ex)
                 {
-                    await ExceptionLoggerHelper.LogExceptionAsync(ex);
+                    // Fire-and-forget for directory creation errors
+                    _ = ExceptionLoggerHelper.LogExceptionAsync(ex, notificationService);
                 }
             }
-            return Path.Combine(_logFolderPath, $"Log_{currentDate}.txt");
         }
+
+        private static async Task UpdateLogFilePathIfNeeded(INotificationService notificationService)
+        {
+            var currentDate = DateTime.Now.Date;
+
+            if (currentDate != _lastLogDate)
+            {
+                _currentLogFilePath = Path.Combine(_logFolderPath, $"Log_{currentDate:yyyyMMdd}.txt");
+                _lastLogDate = currentDate;
+            }
+        }        
     }
 }

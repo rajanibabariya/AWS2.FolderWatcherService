@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -34,12 +35,12 @@ namespace AWS2.FolderWatcherService.Services
                           $"Time: {message.Timestamp:yyyy-MM-dd HH:mm:ss}" +
                           $"Error Message: {message.ErrorMessage}";
 
-                await _emailSender.SendEmailAsync("rajani.babariya@azistaaerospace.com", subject, body, false);
+                await _emailSender.SendEmailAsync("rajani.babariya@azistaaerospace.com", subject, body, string.Empty, false);
                 _logger.LogInformation($"Email alert sent for {message.EventType} event");
             }
             catch (Exception ex)
             {
-                await ExceptionLoggerHelper.LogExceptionAsync(ex);
+                await ExceptionLoggerHelper.LogExceptionAsync(ex, this);
             }
         }
 
@@ -58,11 +59,11 @@ namespace AWS2.FolderWatcherService.Services
             }
             catch (Exception ex)
             {
-                await ExceptionLoggerHelper.LogExceptionAsync(ex);
+                await ExceptionLoggerHelper.LogExceptionAsync(ex, this);
             }
         }
 
-        public async Task SendErrorNotification(ErrorEmailModel notification)
+        public async Task SendErrorNotification(string filePath)
         {
             try
             {
@@ -72,29 +73,21 @@ namespace AWS2.FolderWatcherService.Services
                     templatePath = Path.Combine(templatePath, "ErrorEmailTemplate.html");
 
                     var template = await File.ReadAllTextAsync(templatePath, Encoding.UTF8);
-
                     var body = template
-                        .Replace("{{ApplicationName}}", notification.ApplicationName)
-                        .Replace("{{Timestamp}}", notification.Timestamp.ToString("dd-MMM-yyyy HH:mm:ss"))
-                        .Replace("{{ErrorType}}", notification.ErrorType)
-                        .Replace("{{ErrorMessage}}", notification.ErrorMessage)
-                        .Replace("{{StackTrace}}", notification.StackTrace)
-                        .Replace("{{RequestUrl}}", notification.RequestUrl ?? "N/A")
-                        .Replace("{{CompanyName}}", notification.CompanyName);
+                        .Replace("{{CompanyName}}", ConstantMessagesHelper.companyName ?? "Azista Industries Pvt. Ltd.");
 
-                    //var subject = $"[{_env.EnvironmentName}] {notification.ApplicationName} Error: {notification.ErrorType}";
-                    var subject = $"{notification.ApplicationName} Error: {notification.ErrorType}";
+                    var subject = $"Daily Error Log - {Path.GetFileNameWithoutExtension(Path.GetFileName(filePath))}";
 
                     var emailConfig = _config.GetSection("EmailSettings");
-                    var to = emailConfig["ErrorNotificationRecipients"] ?? "dhaval.vora@azistaaerospace.com";
+                    var to = emailConfig["ErrorDefaultRecipients"] ?? "dhaval.vora@azistaaerospace.com";
 
                     await _emailSender.SendEmailAsync(
                         to,
                         subject,
                         body,
+                        filePath,
                         true);
 
-                    _logger.LogInformation("Error notification email sent");
                 }
             }
             catch (Exception ex)
