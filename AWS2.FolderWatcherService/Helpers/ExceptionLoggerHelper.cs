@@ -6,17 +6,20 @@ using System.Threading.Tasks;
 
 namespace AWS2.FolderWatcherService.Helpers
 {
-    public static class ExceptionLogger
+    public static class ExceptionLoggerHelper
     {
-        // Directory to store the log files
-        private static readonly string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AppLogs");
+        // Directory to store the error log files
+        private static readonly string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ErrorLogs");
 
         // Log file name template (based on current date)
         private static readonly string logFileName = "Log_{0}.txt"; // E.g., Log_2025-03-01.txt
 
-        // Method to log exceptions to a text file
-        public static void LogException(Exception ex)
+        private static readonly SemaphoreSlim _fileLock = new SemaphoreSlim(1, 1); // Ensures only 1 thread at a time
+
+        // Async method to log exceptions to a text file
+        public static async Task LogExceptionAsync(Exception ex)
         {
+            await _fileLock.WaitAsync(); // Async lock
             try
             {
                 // Ensure the log directory exists, if not, create it
@@ -35,12 +38,16 @@ namespace AWS2.FolderWatcherService.Helpers
                                           "----------------------------------------" + Environment.NewLine;
 
                 // Append the exception details to the log file (creates new file if it doesn't exist)
-                File.AppendAllText(logFilePath, exceptionDetails);
+                await File.AppendAllTextAsync(logFilePath, exceptionDetails);
             }
             catch (Exception logException)
             {
                 // In case of an error while logging, you could log this to a different fallback location or handle accordingly
                 Console.WriteLine($"Error logging exception: {logException.Message}");
+            }
+            finally
+            {
+                _fileLock.Release(); // Release lock
             }
         }
     }

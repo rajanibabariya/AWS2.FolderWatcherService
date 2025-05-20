@@ -14,6 +14,6 @@ namespace AWS2.FolderWatcherService.Helpers
     {
         public const string BaseURL = "https://localhost:44396/api/";
         public static string ReceivesStationEnvDataAPI = "{BaseURL}DataLoggerReceiver/StationEnvDataReceives/ReceivesStationEnvData/{clientCode}/{transMode}/{hostDetail}";
-        public static string clientCode = "", transMode = "", hostDetail = "";
+        public const string ReceivesFileLogsAPI = "DataLoggerReceiver/StationEnvDataReceives/ReceivesFileLogs/{clientCode}/{hostDetail}";
     }
 }

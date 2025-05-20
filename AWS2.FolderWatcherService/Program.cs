@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using AWS2.FolderWatcherService;
+using AWS2.FolderWatcherService.Services;
 
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -31,8 +32,8 @@ if (OperatingSystem.IsWindows())
 
 
 // Add services
-//builder.Services.AddSingleton<IEmailSender, EmailSender>();
-//builder.Services.AddSingleton<INotificationService, NotificationService>();
+builder.Services.AddSingleton<IEmailSender, EmailSender>();
+builder.Services.AddSingleton<INotificationService, NotificationService>();
 builder.Services.AddHostedService<Worker>();
 
 

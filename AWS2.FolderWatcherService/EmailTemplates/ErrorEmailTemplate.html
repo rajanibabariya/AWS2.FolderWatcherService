@@ -1,0 +1,128 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Application Error Notification</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            margin: 30px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header-error {
+            background-color: #dc3545;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .content {
+            padding: 25px;
+        }
+        .error-details {
+            background-color: #f8f9fa;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: #888;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            background-color: #f9f9f9;
+        }
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        .info-table th {
+            text-align: left;
+            padding: 8px;
+            background-color: #f2f2f2;
+            width: 30%;
+        }
+        .info-table td {
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+        }
+        .action-button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #dc3545;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+        @media (max-width: 600px) {
+            .container {
+                width: 100%;
+                margin: 0;
+                border-radius: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-error">
+            ⚠️ Application Exception Alert Notification
+        </div>
+        <div class="content">
+            <p>Hello Team,</p>
+            <p>An error has occurred in the application that requires your attention.</p>
+            
+            <table class="info-table">
+                <tr>
+                    <th>Application:</th>
+                    <td>{{ApplicationName}}</td>
+                </tr>                
+                <tr>
+                    <th>Timestamp:</th>
+                    <td>{{Timestamp}}</td>
+                </tr>
+                <tr>
+                    <th>Error Type:</th>
+                    <td>{{ErrorType}}</td>
+                </tr>
+                <tr>
+                    <th>API Name/Function Name:</th>
+                    <td>{{RequestUrl}}</td>
+                </tr>                
+            </table>
+
+            <h3>Error Details:</h3>
+            <div class="error-details">{{ErrorMessage}}</div>
+
+            <h3>Stack Trace:</h3>
+            <div class="error-details">{{StackTrace}}</div>
+
+            <p>Please investigate this issue at your earliest convenience.</p>
+            
+            
+        </div>
+        <div class="footer">
+            &copy; <script>document.write(new Date().getFullYear())</script> {{CompanyName}}. All rights reserved.<br>
+            This is an automated message - please do not reply directly to this email.
+        </div>
+    </div>
+</body>
+</html>

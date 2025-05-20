@@ -5,6 +5,10 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Net.Http;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Threading.Tasks;
+using Org.BouncyCastle.Asn1.X509;
+using AWS2.FolderWatcherService.Services;
 
 
 namespace AWS2.FolderWatcherService
@@ -16,31 +20,33 @@ namespace AWS2.FolderWatcherService
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly List<FileSystemWatcher> _watchers = new();
         private readonly string _hostName = Dns.GetHostName();
-        private readonly string _logFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
         private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+        private readonly INotificationService _notificationService;
 
-        public Worker(ILogger<Worker> logger, IConfiguration config, IHttpClientFactory httpClientFactory)
+
+        public Worker(ILogger<Worker> logger, IConfiguration config, IHttpClientFactory httpClientFactory, INotificationService notificationService)
         {
             _logger = logger;
             _config = config;
             _httpClientFactory = httpClientFactory;
+            _notificationService = notificationService;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             try
             {
-                LogMessage("Starting folder watcher service...");
+                await MessageLoggerHelper.LogMessageAsync("Starting folder watcher service...", _logger);
 
                 var foldersToWatch = _config.GetSection("WatchedFolders").Get<List<WatchedFolder>>();
 
                 if (foldersToWatch == null || !foldersToWatch.Any())
                 {
-                    LogWarning("No folders configured for watching");
+                    await MessageLoggerHelper.LogWarningAsync("No folders configured for watching", _logger);
                     return;
                 }
 
-                InitializeWatchers(foldersToWatch);
+                await InitializeWatchersAsync(foldersToWatch);
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
@@ -49,15 +55,15 @@ namespace AWS2.FolderWatcherService
             }
             catch (Exception ex)
             {
-                ExceptionLogger.LogException(ex);
+                await ExceptionLoggerHelper.LogExceptionAsync(ex);
             }
             finally
             {
-                LogMessage("Stopping folder watcher service...");
+                await MessageLoggerHelper.LogWarningAsync("Stopping folder watcher service...", _logger);
             }
         }
 
-        private void InitializeWatchers(List<WatchedFolder> folders)
+        private async Task InitializeWatchersAsync(List<WatchedFolder> folders)
         {
             foreach (var folder in folders)
             {
@@ -65,7 +71,7 @@ namespace AWS2.FolderWatcherService
                 {
                     if (!Directory.Exists(folder.Path))
                     {
-                        LogWarning($"Directory {folder.Path} does not exist. Creating...");
+                        await MessageLoggerHelper.LogWarningAsync($"Directory {folder.Path} does not exist. Creating...", _logger);
                         Directory.CreateDirectory(folder.Path);
                     }
 
@@ -78,23 +84,35 @@ namespace AWS2.FolderWatcherService
 
                     // Only subscribe to Created and Deleted events as per original code
                     watcher.Created += async (sender, e) => await OnFileEvent(sender, e, "Created", folder);
-                    watcher.Deleted += async (sender, e) => await OnFileEvent(sender, e, "Deleted", folder);
+                    //watcher.Deleted += async (sender, e) => await OnFileEvent(sender, e, "Deleted", folder);
+                    watcher.Error += async (sender, e) => await OnError(sender, e);
 
                     _watchers.Add(watcher);
-                    LogMessage($"Started watching folder: {folder.Path}");
+                    await MessageLoggerHelper.LogMessageAsync($"Started watching folder: {folder.Path}", _logger);
                 }
                 catch (Exception ex)
                 {
-                    ExceptionLogger.LogException(ex);
+                    await ExceptionLoggerHelper.LogExceptionAsync(ex);
                 }
             }
         }
 
         private async Task OnFileEvent(object sender, FileSystemEventArgs e, string eventType, WatchedFolder folderConfig)
         {
+            bool isError = false;
             try
             {
-                LogMessage($"File {eventType}: {e.FullPath}");
+                // Prepare notification
+                var message = new NotificationMessage
+                {
+                    EventType = eventType,
+                    FilePath = e.FullPath,
+                    FolderName = folderConfig.Name,
+                    Timestamp = DateTime.Now
+                };
+
+
+                await MessageLoggerHelper.LogMessageAsync($"File {eventType}: {e.FullPath}", _logger);
 
                 if (eventType == "Deleted")
                 {
@@ -102,42 +120,84 @@ namespace AWS2.FolderWatcherService
                     return;
                 }
 
-                // Process file content
+                var processedFiles = new List<string>();
+
+                if (!string.IsNullOrEmpty(e.Name)) processedFiles.Add(e.Name);
+
+                //if (processedFiles.Any())
+                //{
+                //    try
+                //    {
+                //        string apiUrlStoreFiles = $"{APIURLList.BaseURL}{APIURLList.ReceivesFileLogsAPI}"
+                //                   .Replace("{clientCode}", folderConfig.ClientCode)
+                //                   .Replace("{hostDetail}", _hostName);
+
+                //        var storeResponse = await CallApiStoreFileLogsDataAsync(apiUrlStoreFiles, processedFiles);
+                //        if (!storeResponse)
+                //        {
+                //            await MessageLoggerHelper.LogWarningAsync($"Error storing file logs", _logger);
+                //        }
+                //    }
+                //    catch (Exception ex)
+                //    {
+                //        await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger);
+                //        await ExceptionLoggerHelper.LogExceptionAsync(ex);
+                //    }
+                //}
+
+                //// Process file content
                 var fileContent = await ReadFileWithRetryAsync(e.FullPath);
-                if (fileContent == null) return;
-
-                // Prepare API URL
-                var apiUrl = $"{APIURLList.ReceivesStationEnvDataAPI}"
-                            .Replace("{BaseURL}",APIURLList.BaseURL)
-                            .Replace("{clientCode}", folderConfig.ClientCode)
-                            .Replace("{transMode}", "GPRS").Replace("{hostDetail}", _hostName);
-
-                // Call API
-                var response = await CallApiAsync(apiUrl, fileContent);
-                if (!response.IsSuccess)
+                if (string.IsNullOrEmpty(fileContent))
                 {
-                    LogWarning($"API response was not successful for file: {e.Name}");
-                    return;
+                    throw new Exception($"File content is empty or null for file: {e.FullPath}");
                 }
 
-                LogMessage($"Complete processing: {e.Name}");
+                //// Prepare API URL
+                //var apiUrl = $"{APIURLList.ReceivesStationEnvDataAPI}"
+                //            .Replace("{BaseURL}", APIURLList.BaseURL)
+                //            .Replace("{clientCode}", folderConfig.ClientCode)
+                //            .Replace("{transMode}", "GPRS").Replace("{hostDetail}", _hostName);
+
+                //// Call API
+                //var response = await CallApiAsync(apiUrl, fileContent);
+                //if (!response.IsSuccess)
+                //{
+                //    await MessageLoggerHelper.LogWarningAsync($"API response was not successful for file: {e.Name}", _logger);
+                //    return;
+                //}
+
+                if (folderConfig.EnableMoving)
+                {
+                    await MoveFile(e.FullPath, folderConfig);
+                }
+
+                await MessageLoggerHelper.LogMessageAsync($"Complete processing: {e.Name}", _logger);
             }
             catch (Exception ex)
             {
-                LogError(ex, $"Error processing file event: {e.FullPath}");
-                ExceptionLogger.LogException(ex);
+                await MessageLoggerHelper.LogErrorAsync(ex, $"Error processing file event: {e.FullPath}", _logger);
+                await ExceptionLoggerHelper.LogExceptionAsync(ex);
+
+                await _notificationService.SendErrorNotification(new ErrorEmailModel
+                {
+                    ErrorType = ex.GetType().Name,
+                    ErrorMessage = $"Failed to move file: {ex.Message}",
+                    StackTrace = ex.StackTrace,
+                    RequestUrl = ex.Source
+                });
             }
+            
         }
 
-        private async Task<string?> ReadFileWithRetryAsync(string filePath, int maxRetries = 3, int delayMs = 500)
+        private async Task<string?> ReadFileWithRetryAsync(string filePath, int maxAttempts = 5, int delayMs = 500)
         {
-            for (int i = 0; i < maxRetries; i++)
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
                 try
                 {
                     return await File.ReadAllTextAsync(filePath);
                 }
-                catch (IOException) when (i < maxRetries - 1)
+                catch (IOException) when (attempt < maxAttempts - 1)
                 {
                     await Task.Delay(delayMs);
                 }
@@ -161,70 +221,118 @@ namespace AWS2.FolderWatcherService
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    LogWarning($"API call failed: {response.StatusCode} - {responseContent}");
+                    await MessageLoggerHelper.LogWarningAsync($"API call failed: {response.StatusCode} - {responseContent}", _logger);
                     return new ApiResultModal { IsSuccess = false };
                 }
 
                 try
                 {
-                    return JsonSerializer.Deserialize<ApiResultModal>(responseContent, _jsonOptions)
-                        ?? new ApiResultModal { IsSuccess = false };
+                    return JsonSerializer.Deserialize<ApiResultModal>(responseContent, _jsonOptions) ?? new ApiResultModal { IsSuccess = false };
                 }
                 catch (JsonException ex)
                 {
-                    LogError(ex, "Failed to deserialize API response");
-                    ExceptionLogger.LogException(ex);
+                    await MessageLoggerHelper.LogErrorAsync(ex, "Failed to deserialize API response", _logger);
+                    await ExceptionLoggerHelper.LogExceptionAsync(ex);
                     return new ApiResultModal { IsSuccess = false };
                 }
             }
         }
 
-        private void LogMessage(string message)
+        public async Task<bool> CallApiStoreFileLogsDataAsync(string apiUrl, List<string> DataContent)
         {
             try
             {
-                var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                var logMessage = $"{timestamp} : {message}{Environment.NewLine}";
-                var logFilePath = GetLogFilePath();
+                using (HttpClient httpClient = new HttpClient())
+                {
+                    string jsonPayload = System.Text.Json.JsonSerializer.Serialize(DataContent); // Fixed incorrect 'JsonConvertt' to 'JsonSerializer'  
+                    var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-                File.AppendAllText(logFilePath, logMessage);
-                _logger.LogInformation(message);
+                    var response = await httpClient.PostAsync(apiUrl, content).ConfigureAwait(false);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        await MessageLoggerHelper.LogWarningAsync($"Error in file log API call -> {error}", _logger);
+                        return false;
+                    }
+
+                    var contents = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    var finalResponse = System.Text.Json.JsonSerializer.Deserialize<ApiResultModal>(contents);
+
+                    if (finalResponse is null || !finalResponse.IsSuccess || finalResponse.StatusCode != 200)
+                    {
+                        await MessageLoggerHelper.LogWarningAsync("File log API response was not successful.", _logger);
+                        return false;
+                    }
+
+                    await MessageLoggerHelper.LogMessageAsync("File log API response successful.", _logger);
+                    return true;
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to write log message");
-                ExceptionLogger.LogException(ex);
+                await MessageLoggerHelper.LogErrorAsync(ex, $"Error processing file -> {ex.Message}", _logger);
+                await ExceptionLoggerHelper.LogExceptionAsync(ex);
+                return false;
             }
         }
 
-        private void LogWarning(string message)
+        public async Task MoveFile(string sourcePath, WatchedFolder folder)
         {
-            _logger.LogWarning(message);
-            LogMessage($"WARNING: {message}");
-        }
-
-        private void LogError(Exception ex, string context)
-        {
-            _logger.LogError(ex, context);
-            LogMessage($"ERROR: {context} - {ex.Message}");
-        }
-
-        private string GetLogFilePath()
-        {
-            var currentDate = DateTime.Now.ToString("yyyyMMdd");
-            if (!Directory.Exists(_logFolderPath))
+            if (string.IsNullOrEmpty(folder.ArchiveFilePath))
             {
-                try
-                {
-                    Directory.CreateDirectory(_logFolderPath);
-                }
-                catch (Exception ex)
-                {
-                    ExceptionLogger.LogException(ex);
-                }
+                await MessageLoggerHelper.LogWarningAsync("ArchiveFilePath is null. Cannot move file.", _logger);
+                return;
             }
-            return Path.Combine(_logFolderPath, $"Log_{currentDate}.txt");
+
+            if (!Directory.Exists(folder.ArchiveFilePath))
+            {
+                await MessageLoggerHelper.LogWarningAsync($"Archive directory {folder.ArchiveFilePath} does not exist. Creating...", _logger);
+                Directory.CreateDirectory(folder.ArchiveFilePath);
+            }
+
+            var fileName = Path.GetFileName(sourcePath);
+            var destPath = Path.Combine(folder.ArchiveFilePath, fileName);
+            //var uniqueDestPath = GetUniqueFileName(destPath);
+
+            try
+            {
+                File.Move(sourcePath, destPath);
+                await MessageLoggerHelper.LogMessageAsync($"Moved file from {sourcePath} to {destPath}", _logger);
+            }
+            catch (Exception ex)
+            {
+                await MessageLoggerHelper.LogErrorAsync(ex, $"Failed to move file from {sourcePath} to {destPath}", _logger);
+            }
         }
+
+        private string GetUniqueFileName(string originalPath)
+        {
+            if (!File.Exists(originalPath))
+                return originalPath;
+
+            var directory = Path.GetDirectoryName(originalPath);
+            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(originalPath);
+            var extension = Path.GetExtension(originalPath);
+            var counter = 1;
+
+            string newPath;
+            do
+            {
+                var newFileName = $"{fileNameWithoutExt}_{counter++}{extension}";
+                newPath = Path.Combine(directory, newFileName);
+            } while (File.Exists(newPath));
+
+            return newPath;
+        }
+
+        private async Task OnError(object sender, ErrorEventArgs e)
+        {
+            var ex = e.GetException();
+            _logger.LogError(ex, "File system watcher error occurred");
+            await ExceptionLoggerHelper.LogExceptionAsync(ex);
+        }
+
 
         public override void Dispose()
         {
