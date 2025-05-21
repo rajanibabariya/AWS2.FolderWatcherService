@@ -40,4 +40,22 @@ namespace AWS2.FolderWatcherService.Models
         public string? RequestUrl { get; set; }
         public string? CompanyName { get; set; } = ConstantMessagesHelper.companyName;
     }
+
+    public class WarningEmailModal
+    {
+        public DateTime Timestamp { get; set; }
+        public int? TotalFilesProcessed { get; set; } = 0;
+        public int? FilesWithIssues { get; set; } = 0;
+        //public int? CriticalIssues { get; set; } = 0;
+        public IEnumerable<FileProcessingLogModal> FileProcessingLog { get; set; } = new List<FileProcessingLogModal>();
+    }
+
+    public class FileProcessingLogModal
+    {
+        public DateTime Timestamp { get; set; }
+        public string? Name { get; set; }
+        public string? Path { get; set; }
+        public string? FileName { get; set; }
+        public string? Details { get; set; }
+    }
 }

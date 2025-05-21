@@ -14,7 +14,7 @@ namespace AWS2.FolderWatcherService.Helpers
         private static readonly string _logFolderPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "FilesActivityLogs");
         private static DateTime _lastLogDate = DateTime.MinValue;
         private static string _currentLogFilePath = string.Empty;
-
+        private static DateTime _lastEmailSentDate = DateTime.MinValue;
 
         public static async Task LogMessageAsync(string message, ILogger<Worker> logger, INotificationService notificationService)
         {

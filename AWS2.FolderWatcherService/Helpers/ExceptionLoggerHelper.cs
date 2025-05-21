@@ -1,70 +1,88 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using AWS2.FolderWatcherService.Services;
 
 namespace AWS2.FolderWatcherService.Helpers
 {
     public static class ExceptionLoggerHelper
     {
-        private static readonly string logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ErrorLogs");
-        private static readonly SemaphoreSlim _fileLock = new SemaphoreSlim(1, 1);
-        private static DateTime _lastLogDate = DateTime.MinValue;
-        private static DateTime _lastEmailSentDate = DateTime.MinValue;
+        private static readonly string LogDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ErrorLogs");
+        private static readonly SemaphoreSlim FileLock = new(1, 1);
+        private static DateTime _currentDay = DateTime.Today;
+        private static readonly string[] LogSeparator = new[] { Environment.NewLine + "------------------------------------------------------------" + Environment.NewLine };
 
         public static async Task LogExceptionAsync(Exception ex, INotificationService notificationService)
         {
-            await _fileLock.WaitAsync();
+            await FileLock.WaitAsync();
             try
             {
-                if (!Directory.Exists(logDirectory))
+                if (!Directory.Exists(LogDirectory))
                 {
-                    Directory.CreateDirectory(logDirectory);
+                    Directory.CreateDirectory(LogDirectory);
                 }
 
-                DateTime currentDate = DateTime.Now.Date;
+                DateTime today = DateTime.Today;
+                await HandleDayChangeNotification(today, notificationService);
 
-                // If a new day has started and yesterday's log has not been sent
-                if (currentDate > _lastEmailSentDate && notificationService != null)
-                {
-                    DateTime yesterday = currentDate.AddDays(-1);
-                    string yesterdayLogPath = Path.Combine(logDirectory, $"Log_{yesterday:yyyy-MM-dd}.txt");
+                string logFilePath = Path.Combine(LogDirectory, $"Log_{today:yyyy-MM-dd}.txt");
+                string logContent = BuildLogContent(ex);
 
-                    if (File.Exists(yesterdayLogPath))
-                    {
-                        await notificationService.SendErrorNotification(yesterdayLogPath);
-                        _lastEmailSentDate = currentDate; // Mark email sent for the day
-                    }
-                }
-
-                _lastLogDate = currentDate;
-                string logFilePath = Path.Combine(logDirectory, $"Log_{currentDate:yyyy-MM-dd}.txt");
-
-                var logBuilder = new StringBuilder();
-                logBuilder.AppendLine("------------------------------------------------------------");
-                logBuilder.AppendLine($"Timestamp      : {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
-                logBuilder.AppendLine($"Error Message  : {ex.Message}");
-                logBuilder.AppendLine($"Stack Trace    : {ex.StackTrace}");
-
-                if (ex.InnerException != null)
-                    logBuilder.AppendLine($"Inner Exception: {ex.InnerException.Message}");
-
-                if (!string.IsNullOrWhiteSpace(ex.Source))
-                    logBuilder.AppendLine($"Source         : {ex.Source}");
-
-                if (!string.IsNullOrWhiteSpace(ex.GetType().Name))
-                    logBuilder.AppendLine($"Error Type     : {ex.GetType().Name}");
-
-                logBuilder.AppendLine();
-
-                await File.AppendAllTextAsync(logFilePath, logBuilder.ToString());
+                await File.AppendAllTextAsync(logFilePath, logContent);
             }
             catch (Exception logException)
             {
-                Console.WriteLine($"Error logging exception: {logException.Message}");
+                // Consider adding a fallback logging mechanism here
+                Debug.WriteLine($"Error logging exception: {logException.Message}");
             }
             finally
             {
-                _fileLock.Release();
+                FileLock.Release();
             }
         }
+
+        private static async Task HandleDayChangeNotification(DateTime today, INotificationService notificationService)
+        {
+            if (today > _currentDay && notificationService != null)
+            {
+                string yesterdayLogPath = Path.Combine(LogDirectory, $"Log_{_currentDay:yyyy-MM-dd}.txt");
+
+                if (File.Exists(yesterdayLogPath))
+                {
+                    await notificationService.SendErrorNotification(yesterdayLogPath);
+                    _currentDay = today;
+                }
+            }
+        }
+
+        private static string BuildLogContent(Exception ex)
+        {
+            var builder = new StringBuilder(512); // Pre-allocate reasonable capacity
+
+            builder.Append(LogSeparator[0]); // Avoid string concatenation
+            builder.AppendLine($"Timestamp      : {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}");
+            builder.AppendLine($"Error Message  : {ex.Message}");
+            builder.AppendLine($"Stack Trace    : {ex.StackTrace}");
+
+            if (ex.InnerException != null)
+            {
+                builder.AppendLine($"Inner Exception: {ex.InnerException.Message}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ex.Source))
+            {
+                builder.AppendLine($"Source         : {ex.Source}");
+            }
+
+            string errorType = ex.GetType().Name;
+            if (!string.IsNullOrWhiteSpace(errorType))
+            {
+                builder.AppendLine($"Error Type     : {errorType}");
+            }
+
+            builder.AppendLine();
+            return builder.ToString();
+        }
+
+
     }
 }

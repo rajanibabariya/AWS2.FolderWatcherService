@@ -17,5 +17,6 @@ namespace AWS2.FolderWatcherService.Models
         public bool EnableSsl { get; set; } = true;
         public int Timeout { get; set; } = 10000; // 10 seconds
         public required string ErrorDefaultRecipients { get; set; } // Comma-separated emails
+        public required string WarningDefaultRecipients { get; set; } // Comma-separated emails
     }
 }

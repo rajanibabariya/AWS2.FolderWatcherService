@@ -12,5 +12,6 @@ namespace AWS2.FolderWatcherService.Services
         Task SendEmailAlert(NotificationMessage message);
         Task SendHttpAlert(NotificationMessage message, string url);
         Task SendErrorNotification(string filePath);
+        Task SendWarningNotification(WarningEmailModal warningEmail);
     }
 }

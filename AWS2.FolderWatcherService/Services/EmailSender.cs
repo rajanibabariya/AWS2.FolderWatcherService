@@ -29,6 +29,7 @@ namespace AWS2.FolderWatcherService.Services
                 Username = emailSettings.Username,
                 Password = emailSettings.Password,
                 ErrorDefaultRecipients = emailSettings.ErrorDefaultRecipients,
+                WarningDefaultRecipients = emailSettings.WarningDefaultRecipients,
                 SenderName = emailSettings.SenderName,
                 Port = emailSettings.Port,
                 EnableSsl = emailSettings.EnableSsl,

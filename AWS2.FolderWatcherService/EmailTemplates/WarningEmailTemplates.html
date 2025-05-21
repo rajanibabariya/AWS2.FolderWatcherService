@@ -1,0 +1,258 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-File Data Issues Alert</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 700px; /* Wider to accommodate tables */
+            margin: 30px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header-alert {
+            background-color: #fd7e14;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .content {
+            padding: 25px;
+        }
+
+        .issues-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+
+            .issues-table th {
+                background-color: #f2f2f2;
+                padding: 12px;
+                text-align: left;
+            }
+
+            .issues-table td {
+                padding: 12px;
+                border-bottom: 1px solid #ddd;
+                vertical-align: top;
+            }
+
+            .issues-table tr:last-child td {
+                border-bottom: none;
+            }
+
+        /* .issue-type {
+            font-weight: bold;
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }*/
+
+        /* Data Ingestion */
+        /*.missing {
+                    background-color: #ffdddd;
+                    color: #d32f2f;
+                }
+
+                .delayed {
+                    background-color: #fff3cd;
+                    color: #856404;
+                }
+
+                .early {
+                    background-color: #d1ecf1;
+                    color: #0c5460;
+                }
+
+                .duplicate {
+                    background-color: #e2d4f0;
+                    color: #4a1e8a;
+                }*/
+
+        /** File Structure *
+                .empty {
+                    background-color: #ffe8cc;
+                    color: #804d00;
+                }
+
+                .wrong-format {
+                    background-color: #e0c3fc;
+                    color: #3d0d7a;
+                }
+
+                .corrupt {
+                    background-color: #f8d7da;
+                    color: #721c24;
+                }
+
+                .partial {
+                    background-color: #fff2cc;
+                    color: #7d6608;
+                }
+                */
+        /* Data Content */
+        /*.invalid {
+                    background-color: #ffecb5;
+                    color: #7a5f00;
+                }
+
+                .outlier {
+                    background-color: #c3fae8;
+                    color: #0b5e54;
+                }
+
+                .other {
+                    background-color: #e2e3e5;
+                    color: #383d41;
+                }
+
+                .mismatch {
+                    background-color: #ffcccb;
+                    color: #8b0000;
+                }*/
+
+        /* Business Rules */
+        /*.validation {
+                    background-color: #f5c6cb;
+                    color: #721c24;
+                }
+
+                .reference {
+                    background-color: #d6d4f0;
+                    color: #2a1e8a;
+                }
+
+                .version {
+                    background-color: #ffdfb3;
+                    color: #804d00;
+                }*/
+
+        /* System Issues */
+        /*.quota {
+                    background-color: #f8d7da;
+                    color: #721c24;
+                }
+
+                .auth {
+                    background-color: #d6d8d9;
+                    color: #1b1e21;
+                }*/
+
+        .footer {
+            text-align: center;
+            font-size: 12px;
+            color: #888;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            background-color: #f9f9f9;
+        }
+
+        .action-button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #fd7e14;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin-top: 15px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .summary-card {
+            background-color: #fff8f0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        }
+
+        .summary-item {
+            margin: 5px 10px;
+        }
+
+        .summary-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fd7e14;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                width: 100%;
+                margin: 0;
+                border-radius: 0;
+            }
+
+            .issues-table {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-alert">
+            ⚠️ Multiple Data Issues Detected
+        </div>
+        <div class="content">
+            <p>Hello Team,</p>
+            <p>We’ve detected <strong>multiple files data issues</strong> in the console/service application during the {{dateTime}} processing batch. Please review the details below and find the attached file for further analysis:</p>
+
+            <!-- Summary Card -->
+            <div class="summary-card">
+                <div class="summary-item">
+                    <div>Date</div>
+                    <div class="summary-value">{{dateTime}}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Total Files Processed</div>
+                    <div class="summary-value">{{totalFilesProcessed}}</div>
+                </div>
+                <div class="summary-item">
+                    <div>Files With Issues</div>
+                    <div class="summary-value">{{filesWithIssues}}</div>
+                </div>
+            </div>
+
+            <p><strong>Recommended Actions:</strong></p>
+            <ol>
+                <li>Please check dataloger.</li>
+            </ol>
+
+            <p>Please investigate this issue at your earliest convenience.</p>
+
+            <!-- <div> -->
+            <!-- <a href="#" class="action-button">View Detailed Report</a> -->
+            <!-- <a href="#" class="action-button" style="background-color: #6c757d;">Data Quality Dashboard</a> -->
+            <!-- <a href="#" class="action-button" style="background-color: #28a745;">Re-process Files</a> -->
+            <!-- </div> -->
+        </div>
+        <div class="footer">
+            &copy;
+            <script>document.write(new Date().getFullYear())</script> {{companyName}}. All rights reserved.<br>
+            This is an automated message - please do not reply directly to this email.
+        </div>
+    </div>
+</body>
+</html>

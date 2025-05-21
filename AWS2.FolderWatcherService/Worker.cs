@@ -16,12 +16,20 @@ namespace AWS2.FolderWatcherService
         private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
         private readonly INotificationService _notificationService;
 
+        // Day-wise statistics tracking
+        private DateTime _currentDay;
+        private int _totalFilesProcessedToday;
+        private int _filesWithIssuesToday;
+        private readonly object _statsLock = new object();
+
+        private readonly List<FileProcessingLogModal> _processingLogs = new();
 
         public Worker(ILogger<Worker> logger, IConfiguration config, INotificationService notificationService)
         {
             _logger = logger;
             _config = config;
             _notificationService = notificationService;
+            _currentDay = DateTime.Today;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -42,6 +50,12 @@ namespace AWS2.FolderWatcherService
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
+                    // Check if day has changed and reset counters if needed
+                    CheckAndResetDayCounters();
+
+                    // Log statistics periodically (e.g., every hour)
+                    await LogStatisticsIfNeeded();
+
                     await Task.Delay(1000, stoppingToken);
                 }
             }
@@ -52,6 +66,94 @@ namespace AWS2.FolderWatcherService
             finally
             {
                 await MessageLoggerHelper.LogWarningAsync("Stopping folder watcher service...", _logger, _notificationService);
+            }
+        }
+
+        private void CheckAndResetDayCounters()
+        {
+            DateTime today = DateTime.Today;
+            if (today <= _currentDay) return;
+
+            lock (_statsLock)
+            {
+                if (today <= _currentDay) return;
+
+                // Only send notification if there were issues
+                if (_filesWithIssuesToday != 0)
+                {
+                    var warningEmail = new WarningEmailModal
+                    {
+                        Timestamp = _currentDay,
+                        TotalFilesProcessed = _totalFilesProcessedToday,
+                        FilesWithIssues = _filesWithIssuesToday,
+                        FileProcessingLog = _processingLogs
+                    };
+
+                    _ = _notificationService.SendWarningNotification(warningEmail)
+                        .ContinueWith(t =>
+                        {
+                            if (t.IsFaulted)
+                            {
+                                // Log the error if needed
+                            }
+                        });
+                }
+
+                // Reset counters
+                _currentDay = today;
+                _totalFilesProcessedToday = 0;
+                _filesWithIssuesToday = 0;
+                _processingLogs.Clear();
+            }
+        }
+
+        private void LogProcessingIssue(string fileName, string details, string name, string path)
+        {
+            lock (_statsLock)
+            {
+                _processingLogs.Add(new FileProcessingLogModal
+                {
+                    Timestamp = DateTime.Now,
+                    Name = name,
+                    Path = path,
+                    FileName = fileName,
+                    Details = details
+                });
+            }
+        }
+
+        private async Task LogStatisticsIfNeeded()
+        {
+            // Log statistics every hour (adjust as needed)
+            if (DateTime.Now.Minute == 0)
+            {
+                await LogDailyStatistics();
+            }
+        }
+
+        private async Task LogDailyStatistics()
+        {
+            string statsMessage = $"Daily Statistics (as of {DateTime.Now:HH:mm}): " +
+                                 $"Total Files Processed: {_totalFilesProcessedToday}, " +
+                                 $"Files With Issues: {_filesWithIssuesToday}";
+
+            await MessageLoggerHelper.LogMessageAsync(statsMessage, _logger, _notificationService);
+        }
+
+        private void IncrementFilesProcessed()
+        {
+            lock (_statsLock)
+            {
+                _totalFilesProcessedToday++;
+            }
+        }
+
+        private void IncrementFilesWithIssues(string fileName, string details, string name, string path)
+        {
+            lock (_statsLock)
+            {
+                _filesWithIssuesToday++;
+                LogProcessingIssue(fileName, details, name, path);
             }
         }
 
@@ -91,9 +193,9 @@ namespace AWS2.FolderWatcherService
 
         private async Task OnFileEvent(object sender, FileSystemEventArgs e, string eventType, WatchedFolder folderConfig)
         {
-            bool isError = false;
             try
             {
+                IncrementFilesProcessed();
                 await MessageLoggerHelper.LogMessageAsync($"File {eventType}: {e.FullPath}", _logger, _notificationService);
 
                 if (eventType == "Deleted")
@@ -106,31 +208,35 @@ namespace AWS2.FolderWatcherService
 
                 if (!string.IsNullOrEmpty(e.Name)) processedFiles.Add(e.Name);
 
-                if (processedFiles.Any())
+                if (!processedFiles.Any())
                 {
-                    try
-                    {
-                        string apiUrlStoreFiles = $"{APIURLList.BaseURL}{APIURLList.ReceivesFileLogsAPI}"
-                                   .Replace("{clientCode}", folderConfig.ClientCode)
-                                   .Replace("{hostDetail}", _hostName);
+                    IncrementFilesWithIssues(e.Name, "File Not Exist", folderConfig.Name, folderConfig.Path);
+                }
 
-                        var storeResponse = await CallApiStoreFileLogsDataAsync(apiUrlStoreFiles, processedFiles);
-                        if (!storeResponse)
-                        {
-                            await MessageLoggerHelper.LogWarningAsync($"Error storing file logs", _logger, _notificationService);
-                        }
-                    }
-                    catch (Exception ex)
+                try
+                {
+                    string apiUrlStoreFiles = $"{APIURLList.BaseURL}{APIURLList.ReceivesFileLogsAPI}"
+                               .Replace("{clientCode}", folderConfig.ClientCode)
+                               .Replace("{hostDetail}", _hostName);
+
+                    var storeResponse = await CallApiStoreFileLogsDataAsync(apiUrlStoreFiles, processedFiles);
+                    if (!storeResponse)
                     {
-                        await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
+                        await MessageLoggerHelper.LogWarningAsync($"Error storing file logs", _logger, _notificationService);
                     }
                 }
+                catch (Exception ex)
+                {
+                    await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
+                }
+
 
                 //// Process file content
                 var fileContent = await ReadFileWithRetryAsync(e.FullPath);
                 if (string.IsNullOrEmpty(fileContent))
                 {
-                    throw new Exception($"File content is empty or null for file: {e.FullPath}");
+                    IncrementFilesWithIssues(e.Name, "File content is empty or null for file", folderConfig.Name, folderConfig.Path);
+                    await MessageLoggerHelper.LogWarningAsync($"File content is empty or null for file: {e.FullPath}", _logger, _notificationService);
                 }
 
                 // Prepare API URL
@@ -143,6 +249,7 @@ namespace AWS2.FolderWatcherService
                 var response = await CallApiAsync(apiUrl, fileContent);
                 if (!response.IsSuccess)
                 {
+                    IncrementFilesWithIssues(e.Name, response.Message, folderConfig.Name, folderConfig.Path);
                     await MessageLoggerHelper.LogWarningAsync($"API response was not successful for file: {e.Name}", _logger, _notificationService);
                     return;
                 }
@@ -158,7 +265,6 @@ namespace AWS2.FolderWatcherService
             {
                 await MessageLoggerHelper.LogErrorAsync(ex, $"Error processing file event: {e.FullPath}", _logger, _notificationService);
             }
-
         }
 
         private async Task<string?> ReadFileWithRetryAsync(string filePath, int maxAttempts = 5, int delayMs = 500)
@@ -178,7 +284,7 @@ namespace AWS2.FolderWatcherService
         }
 
         private async Task<ApiResultModal> CallApiAsync(string apiUrl, string content)
-        {            
+        {
             using (HttpClient httpClient = new HttpClient())
             {
 
