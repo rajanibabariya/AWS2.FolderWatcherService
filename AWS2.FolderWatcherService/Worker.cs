@@ -122,12 +122,16 @@ namespace AWS2.FolderWatcherService
             }
         }
 
+
+        private DateTime _lastStatsLogTime = DateTime.MinValue;
         private async Task LogStatisticsIfNeeded()
         {
-            // Log statistics every hour (adjust as needed)
-            if (DateTime.Now.Minute == 0)
+            // Log statistics every hour, but only once per hour
+            var now = DateTime.Now;
+            if (now.Minute == 0 && (now - _lastStatsLogTime).TotalMinutes >= 60)
             {
                 await LogDailyStatistics();
+                _lastStatsLogTime = now;
             }
         }
 
@@ -177,7 +181,8 @@ namespace AWS2.FolderWatcherService
                     };
 
                     // Only subscribe to Created and Deleted events as per original code
-                    watcher.Created += async (sender, e) => await OnFileEvent(sender, e, "Created", folder);
+                    //watcher.Created += async (sender, e) => await OnFileEvent(sender, e, "Created", folder);
+                    watcher.Changed += async (sender, e) => await OnFileEvent(sender, e, "Changed", folder);
                     //watcher.Deleted += async (sender, e) => await OnFileEvent(sender, e, "Deleted", folder);
                     watcher.Error += async (sender, e) => await OnError(sender, e);
 
@@ -210,7 +215,8 @@ namespace AWS2.FolderWatcherService
 
                 if (!processedFiles.Any())
                 {
-                    IncrementFilesWithIssues(e.Name, "File Not Exist", folderConfig.Name, folderConfig.Path);
+                    IncrementFilesWithIssues(e.Name ?? "UnknownFile", "File Not Exist", folderConfig.Name ?? "UnknownName", folderConfig.Path);
+                    return;
                 }
 
                 try
@@ -230,27 +236,27 @@ namespace AWS2.FolderWatcherService
                     await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
                 }
 
-
-                //// Process file content
+                // Process file content
                 var fileContent = await ReadFileWithRetryAsync(e.FullPath);
                 if (string.IsNullOrEmpty(fileContent))
                 {
-                    IncrementFilesWithIssues(e.Name, "File content is empty or null for file", folderConfig.Name, folderConfig.Path);
+                    IncrementFilesWithIssues(e.Name ?? "UnknownFile", "File content is empty or null for file", folderConfig.Name ?? "UnknownName", folderConfig.Path);
                     await MessageLoggerHelper.LogWarningAsync($"File content is empty or null for file: {e.FullPath}", _logger, _notificationService);
+                    return;
                 }
 
                 // Prepare API URL
-                var apiUrl = $"{APIURLList.ReceivesStationEnvDataAPI}"
-                            .Replace("{BaseURL}", APIURLList.BaseURL)
+                var apiUrl = $"{APIURLList.BaseURL}{APIURLList.ReceivesStationEnvDataAPI}"
                             .Replace("{clientCode}", folderConfig.ClientCode)
-                            .Replace("{transMode}", "GPRS").Replace("{hostDetail}", _hostName);
+                            .Replace("{transMode}", "GPRS")
+                            .Replace("{hostDetail}", _hostName);
 
                 // Call API
                 var response = await CallApiAsync(apiUrl, fileContent);
                 if (!response.IsSuccess)
                 {
-                    IncrementFilesWithIssues(e.Name, response.Message, folderConfig.Name, folderConfig.Path);
-                    await MessageLoggerHelper.LogWarningAsync($"API response was not successful for file: {e.Name}", _logger, _notificationService);
+                    IncrementFilesWithIssues(e.Name ?? "UnknownFile", response.Message ?? "Unknown error", folderConfig.Name ?? "UnknownName", folderConfig.Path);
+                    await MessageLoggerHelper.LogWarningAsync($"{response.Message}: {e.Name}", _logger, _notificationService);
                     return;
                 }
 
@@ -267,19 +273,50 @@ namespace AWS2.FolderWatcherService
             }
         }
 
-        private async Task<string?> ReadFileWithRetryAsync(string filePath, int maxAttempts = 5, int delayMs = 500)
+        private async Task<string?> ReadFileWithRetryAsync(string filePath, int maxAttempts = 5, int initialDelayMs = 200, int timeoutSeconds = 30)
         {
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
+
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+
+            try
             {
-                try
+                for (int attempt = 0; attempt < maxAttempts; attempt++)
                 {
-                    return await File.ReadAllTextAsync(filePath);
-                }
-                catch (IOException) when (attempt < maxAttempts - 1)
-                {
-                    await Task.Delay(delayMs);
+                    cts.Token.ThrowIfCancellationRequested();
+
+                    try
+                    {
+                        using (var stream = new FileStream(
+                            filePath,
+                            FileMode.Open,
+                            FileAccess.Read,
+                            FileShare.ReadWrite,
+                            bufferSize: 4096,
+                            useAsync: true))
+                        {
+                            using (var reader = new StreamReader(stream))
+                            {
+                                return await reader.ReadToEndAsync(cts.Token);
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw; // Timeout expired
+                    }
+                    catch (IOException) when (attempt < maxAttempts - 1)
+                    {
+                        var delayMs = initialDelayMs * (int)Math.Pow(2, attempt);
+                        await Task.Delay(delayMs, cts.Token);
+                    }
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // Timeout expired
+                return null;
+            }
+
             return null;
         }
 
@@ -330,7 +367,7 @@ namespace AWS2.FolderWatcherService
                     }
 
                     var contents = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    var finalResponse = System.Text.Json.JsonSerializer.Deserialize<ApiResultModal>(contents);
+                    var finalResponse = JsonSerializer.Deserialize<ApiResultModal>(contents, _jsonOptions);
 
                     if (finalResponse is null || !finalResponse.IsSuccess || finalResponse.StatusCode != 200)
                     {

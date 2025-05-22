@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\Projects\\FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj": {}
+    "D:\\Projects\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj": {}
   },
   "projects": {
-    "D:\\Projects\\FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj": {
+    "D:\\Projects\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\Projects\\FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj",
+        "projectUniqueName": "D:\\Projects\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj",
         "projectName": "AWS2.FolderWatcherService",
-        "projectPath": "D:\\Projects\\FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj",
+        "projectPath": "D:\\Projects\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService.csproj",
         "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
-        "outputPath": "D:\\Projects\\FolderWatcherService\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\obj\\",
+        "outputPath": "D:\\Projects\\AWS2.FolderWatcherService\\AWS2.FolderWatcherService\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
