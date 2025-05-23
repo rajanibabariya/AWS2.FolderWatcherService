@@ -5,6 +5,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<UserSecretsId>dotnet-AWS2.FolderWatcherService-2d672a7b-c597-45bd-befc-441e845f85ea</UserSecretsId>
+		<ApplicationIcon>DelhiINSAT 1.ico</ApplicationIcon>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -18,5 +19,9 @@
 		<Content Include="EmailTemplates\**">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Content Include="DelhiINSAT 1.ico" />
 	</ItemGroup>
 </Project>

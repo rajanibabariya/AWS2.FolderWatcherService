@@ -7,7 +7,7 @@ using AWS2.FolderWatcherService.Services;
 
 namespace AWS2.FolderWatcherService.Helpers
 {
-    
+
     public static class MessageLoggerHelper
     {
         private static readonly SemaphoreSlim _fileLock = new(1, 1);
@@ -18,27 +18,27 @@ namespace AWS2.FolderWatcherService.Helpers
 
         public static async Task LogMessageAsync(string message, ILogger<Worker> logger, INotificationService notificationService)
         {
-            await LogInternalAsync(message, logger, notificationService);
+            await LogInternalAsync(message, logger, notificationService, true);
         }
 
         public static async Task LogWarningAsync(string message, ILogger<Worker> logger, INotificationService notificationService)
         {
-            await LogInternalAsync($"WARNING: {message}", logger, notificationService);
-            logger.LogWarning(message);
+            await LogInternalAsync($"WARNING: {message}", logger, notificationService, false);
+            logger.LogWarning($"{DateTime.Now:dd-MMM-yyyy HH:mm:ss} -- WARNING: {message}");
         }
 
         public static async Task LogErrorAsync(Exception ex, string context, ILogger<Worker> logger, INotificationService notificationService)
         {
             var errorMessage = $"ERROR: {context} - {ex.Message}";
-            await LogInternalAsync(errorMessage, logger, notificationService);
-            logger.LogError(ex, context);
+            await LogInternalAsync(errorMessage, logger, notificationService, false);
+            logger.LogError(ex, $"{DateTime.Now:dd-MMM-yyyy HH:mm:ss} -- {errorMessage}");
 
             // Log full exception details separately
             await ExceptionLoggerHelper.LogExceptionAsync(ex, notificationService);
         }
 
 
-        private static async Task LogInternalAsync(string message, ILogger<Worker> logger, INotificationService notificationService)
+        private static async Task LogInternalAsync(string message, ILogger<Worker> logger, INotificationService notificationService, bool isInfo)
         {
             await _fileLock.WaitAsync();
             try
@@ -50,11 +50,12 @@ namespace AWS2.FolderWatcherService.Helpers
                 var logMessage = $"{timestamp} : {message}{Environment.NewLine}";
 
                 await File.AppendAllTextAsync(_currentLogFilePath, logMessage);
-                logger.LogInformation(message);
+                if (isInfo) logger.LogInformation($"{DateTime.Now:dd-MMM-yyyy HH:mm:ss} -- {message}");
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Failed to write log message");
+                var errorMessage = $"ERROR: Failed to write log message - {ex.Message}";
+                logger.LogError(ex, $"{DateTime.Now:dd-MMM-yyyy HH:mm:ss} -- {errorMessage}");
                 await ExceptionLoggerHelper.LogExceptionAsync(ex, notificationService);
             }
             finally
@@ -88,6 +89,6 @@ namespace AWS2.FolderWatcherService.Helpers
                 _currentLogFilePath = Path.Combine(_logFolderPath, $"Log_{currentDate:yyyyMMdd}.txt");
                 _lastLogDate = currentDate;
             }
-        }        
+        }
     }
 }

@@ -16,6 +16,7 @@ namespace AWS2.FolderWatcherService
         private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
         private readonly INotificationService _notificationService;
 
+        private DateTime _lastStatsLogTime = DateTime.MinValue;
         // Day-wise statistics tracking
         private DateTime _currentDay;
         private int _totalFilesProcessedToday;
@@ -92,9 +93,34 @@ namespace AWS2.FolderWatcherService
                     _ = _notificationService.SendWarningNotification(warningEmail)
                         .ContinueWith(t =>
                         {
-                            if (t.IsFaulted)
+                            if (!t.IsFaulted)
                             {
-                                // Log the error if needed
+                                // Write warning email details to a txt file for auditing
+                                try
+                                {
+                                    var logDir = Path.Combine(AppContext.BaseDirectory, "WarningEmailsLogs");
+                                    if (!Directory.Exists(logDir))
+                                        Directory.CreateDirectory(logDir);
+
+                                    var fileName = $"WarningEmail_{_currentDay:yyyyMMdd}.txt";
+                                    var filePath = Path.Combine(logDir, fileName);
+
+                                    var logContent = new StringBuilder();
+                                    logContent.AppendLine($"Timestamp: {warningEmail.Timestamp}");
+                                    logContent.AppendLine($"TotalFilesProcessed: {warningEmail.TotalFilesProcessed}");
+                                    logContent.AppendLine($"FilesWithIssues: {warningEmail.FilesWithIssues}");
+                                    logContent.AppendLine("FileProcessingLog:");
+                                    foreach (var log in warningEmail.FileProcessingLog)
+                                    {
+                                        logContent.AppendLine($"  - [{log.Timestamp:yyyy-MM-dd HH:mm:ss}] Name: {log.Name}, Path: {log.Path}, FileName: {log.FileName}, Details: {log.Details}");
+                                    }
+
+                                    File.WriteAllText(filePath, logContent.ToString());
+                                }
+                                catch (Exception fileEx)
+                                {
+                                    _logger.LogError(fileEx, "Failed to write warning email details to txt file.");
+                                }
                             }
                         });
                 }
@@ -122,8 +148,6 @@ namespace AWS2.FolderWatcherService
             }
         }
 
-
-        private DateTime _lastStatsLogTime = DateTime.MinValue;
         private async Task LogStatisticsIfNeeded()
         {
             // Log statistics every hour, but only once per hour
@@ -396,7 +420,7 @@ namespace AWS2.FolderWatcherService
 
             if (!Directory.Exists(folder.ArchiveFilePath))
             {
-                await MessageLoggerHelper.LogWarningAsync($"Archive directory {folder.ArchiveFilePath} does not exist. Creating...", _logger, _notificationService);
+                //await MessageLoggerHelper.LogWarningAsync($"Archive directory {folder.ArchiveFilePath} does not exist. Creating...", _logger, _notificationService);
                 Directory.CreateDirectory(folder.ArchiveFilePath);
             }
 
