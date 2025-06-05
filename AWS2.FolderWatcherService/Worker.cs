@@ -4,6 +4,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using AWS2.FolderWatcherService.Services;
+using Renci.SshNet;
+using System.Threading;
+using System.Collections.Concurrent;
 
 namespace AWS2.FolderWatcherService
 {
@@ -13,8 +16,21 @@ namespace AWS2.FolderWatcherService
         private readonly IConfiguration _config;
         private readonly List<FileSystemWatcher> _watchers = new();
         private readonly string _hostName = Dns.GetHostName();
+
         private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
         private readonly INotificationService _notificationService;
+        private readonly Dictionary<string, DateTime> _lastProcessedFiles = new();
+        private readonly TimeSpan _changeEventSuppressWindow = TimeSpan.FromSeconds(2);
+        private readonly ConcurrentDictionary<string, DateTime> _recentEvents = new();
+        private readonly TimeSpan _eventSuppressionWindow = TimeSpan.FromSeconds(2);
+
+        // Add these fields to Worker class
+        private string? _configApiUrl;
+        private List<WatchedFolder>? _foldersToWatch;
+        private DateTime _lastConfigFetchTime = DateTime.MinValue;
+        private readonly TimeSpan _configRefreshInterval = TimeSpan.FromMinutes(5);
+        private readonly object _watcherLock = new();
+
 
         private DateTime _lastStatsLogTime = DateTime.MinValue;
         // Day-wise statistics tracking
@@ -33,24 +49,132 @@ namespace AWS2.FolderWatcherService
             _currentDay = DateTime.Today;
         }
 
+
+
+        // Add this method to Worker class
+        private async Task<List<WatchedFolder>?> FetchWatchedFoldersFromApiAsync()
+        {
+            try
+            {
+                string configIds = _config.GetValue<string>("ConfigIds") ?? string.Empty;
+                if (string.IsNullOrEmpty(configIds))
+                {
+                    await MessageLoggerHelper.LogWarningAsync("ConfigIds not configured.", _logger, _notificationService);
+                    return null;
+                }
+                _configApiUrl ??= $"{APIURLList.BaseURL}{APIURLList.GetFileWatcherConfigAPI}";
+                if (string.IsNullOrEmpty(_configApiUrl))
+                {
+                    await MessageLoggerHelper.LogWarningAsync("WatchedFoldersApiUrl not configured.", _logger, _notificationService);
+                    return null;
+                }
+
+                using var httpClient = new HttpClient();
+                using var formContent = new MultipartFormDataContent();
+                formContent.Add(new StringContent(configIds), "configIds");
+
+                var response = await httpClient.PostAsync(_configApiUrl, formContent);
+                if (!response.IsSuccessStatusCode)
+                {
+                    await MessageLoggerHelper.LogWarningAsync($"Failed to fetch watched folders from API: {response.StatusCode}", _logger, _notificationService);
+                    return null;
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                var responseApiResult = JsonSerializer.Deserialize<ApiResultModal>(responseContent, _jsonOptions) ?? new ApiResultModal { IsSuccess = false };
+                if (!responseApiResult.IsSuccess)
+                {
+                    await MessageLoggerHelper.LogWarningAsync($"{responseApiResult.Message}", _logger, _notificationService);
+                }
+
+                var folders = JsonSerializer.Deserialize<List<WatchedFolder>>(responseApiResult.Result?.ToString() ?? string.Empty, _jsonOptions);
+
+                return folders;
+            }
+            catch (Exception ex)
+            {
+                await MessageLoggerHelper.LogErrorAsync(ex, "Error fetching watched folders from API", _logger, _notificationService);
+                return null;
+            }
+        }
+
+        // Add this method to Worker class
+        private async Task RefreshWatchersIfNeededAsync(CancellationToken stoppingToken)
+        {
+            if ((DateTime.Now - _lastConfigFetchTime) < _configRefreshInterval) return;
+
+            var newFolders = await FetchWatchedFoldersFromApiAsync();
+            if (newFolders is null) return;
+
+            // Compare with current config
+            bool configChanged = _foldersToWatch == null ||
+                                 newFolders.Count != _foldersToWatch.Count ||
+                                 !newFolders.SequenceEqual(_foldersToWatch, new WatchedFolderComparer());
+
+            if (configChanged)
+            {
+                lock (_watcherLock)
+                {
+                    foreach (var watcher in _watchers)
+                        watcher.Dispose();
+                    _watchers.Clear();
+                }
+                await InitializeWatchersAsync(newFolders);
+                _foldersToWatch = newFolders;
+                await MessageLoggerHelper.LogMessageAsync("Folder watcher configuration refreshed from API.", _logger, _notificationService);
+            }
+
+            _lastConfigFetchTime = DateTime.Now;
+        }
+
+        // Add this class to Worker.cs (for comparing WatchedFolder objects)
+        private class WatchedFolderComparer : IEqualityComparer<WatchedFolder>
+        {
+            public bool Equals(WatchedFolder? x, WatchedFolder? y)
+            {
+                if (x == null || y == null) return false;
+                return x.FolderPath == y.FolderPath &&
+                       x.ArchiveFolderPath == y.ArchiveFolderPath &&
+                       x.ClientCode == y.ClientCode &&
+                       x.IncludeSubDirectories == y.IncludeSubDirectories &&
+                       x.CopyFileForOtherServer == y.CopyFileForOtherServer &&
+                       x.CopyFileFtpServerName == y.CopyFileFtpServerName &&
+                       x.CopyFileFtpUsername == y.CopyFileFtpUsername &&
+                       x.CopyFileFtpPassword == y.CopyFileFtpPassword &&
+                       x.CopyFileFtpAccessDirectory == y.CopyFileFtpAccessDirectory &&
+                       x.CopyFileSecure == y.CopyFileSecure &&
+                       x.CopyFileFtpPort == y.CopyFileFtpPort &&
+                       x.EnableMovingForArchiveFolder == y.EnableMovingForArchiveFolder;
+            }
+
+            public int GetHashCode(WatchedFolder obj)
+            {
+                return HashCode.Combine(obj.FolderPath, obj.ClientCode, obj.IncludeSubDirectories, obj.EnableMovingForArchiveFolder);
+            }
+        }
+
+        // Replace ExecuteAsync with this version
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             try
             {
                 await MessageLoggerHelper.LogMessageAsync("Starting folder watcher service...", _logger, _notificationService);
 
-                var foldersToWatch = _config.GetSection("WatchedFolders").Get<List<WatchedFolder>>();
-
-                if (foldersToWatch is null || !foldersToWatch.Any())
+                _foldersToWatch = await FetchWatchedFoldersFromApiAsync();
+                if (_foldersToWatch is null || !_foldersToWatch.Any())
                 {
                     await MessageLoggerHelper.LogWarningAsync("No folders configured for watching", _logger, _notificationService);
                     return;
                 }
 
-                await InitializeWatchersAsync(foldersToWatch);
+                await InitializeWatchersAsync(_foldersToWatch);
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
+                    // Check if config needs to be refreshed from API
+                    await RefreshWatchersIfNeededAsync(stoppingToken);
+
                     // Check if day has changed and reset counters if needed
                     CheckAndResetDayCounters();
 
@@ -187,114 +311,97 @@ namespace AWS2.FolderWatcherService
 
         private async Task InitializeWatchersAsync(List<WatchedFolder> folders)
         {
-            foreach (var folder in folders)
+            var initTasks = folders.Select(async folder =>
             {
                 try
                 {
-                    if (!Directory.Exists(folder.Path))
+                    if (!Directory.Exists(folder.FolderPath))
                     {
-                        await MessageLoggerHelper.LogWarningAsync($"Directory {folder.Path} does not exist. Creating...", _logger, _notificationService);
-                        Directory.CreateDirectory(folder.Path);
+                        await MessageLoggerHelper.LogWarningAsync($"Directory {folder.FolderPath} does not exist. Creating...", _logger, _notificationService);
+                        Directory.CreateDirectory(folder.FolderPath);
                     }
 
-                    var watcher = new FileSystemWatcher(folder.Path)
+                    var watcher = new FileSystemWatcher(folder.FolderPath)
                     {
-                        NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
-                        IncludeSubdirectories = folder.IncludeSubdirectories,
-                        EnableRaisingEvents = true
+                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
+                        IncludeSubdirectories = folder.IncludeSubDirectories,
+                        EnableRaisingEvents = true,
+                        InternalBufferSize = 64 * 1024
                     };
 
-                    // Only subscribe to Created and Deleted events as per original code
-                    //watcher.Created += async (sender, e) => await OnFileEvent(sender, e, "Created", folder);
-                    watcher.Changed += async (sender, e) => await OnFileEvent(sender, e, "Changed", folder);
-                    //watcher.Deleted += async (sender, e) => await OnFileEvent(sender, e, "Deleted", folder);
+                    watcher.Changed += async (sender, e) =>
+                    {
+                        try
+                        {
+                            _ = Task.Run(() => OnFileEvent(sender, e, "Changed", folder));
+                        }
+                        catch (Exception ex)
+                        {
+                            await MessageLoggerHelper.LogErrorAsync(ex, "Error starting file event task", _logger, _notificationService);
+                        }
+                    };
+
                     watcher.Error += async (sender, e) => await OnError(sender, e);
 
-                    _watchers.Add(watcher);
-                    await MessageLoggerHelper.LogMessageAsync($"Started watching folder: {folder.Path}", _logger, _notificationService);
+                    lock (_watcherLock)
+                    {
+                        _watchers.Add(watcher);
+                    }
+
+                    await MessageLoggerHelper.LogMessageAsync($"Started watching folder: {folder.FolderPath}", _logger, _notificationService);
                 }
                 catch (Exception ex)
                 {
                     await ExceptionLoggerHelper.LogExceptionAsync(ex, _notificationService);
                 }
-            }
+            });
+
+            await Task.WhenAll(initTasks);
         }
 
         private async Task OnFileEvent(object sender, FileSystemEventArgs e, string eventType, WatchedFolder folderConfig)
         {
             try
             {
+                if (eventType == "Changed" && IsDuplicateEvent(e.FullPath))
+                    return;
+
+                if (!File.Exists(e.FullPath)) return;
+
                 IncrementFilesProcessed();
                 await MessageLoggerHelper.LogMessageAsync($"File {eventType}: {e.FullPath}", _logger, _notificationService);
 
-                if (eventType == "Deleted")
+
+                await ProcessFile(e.Name, e.FullPath, folderConfig);
+
+                var files = Directory.GetFiles(folderConfig.FolderPath);
+                foreach (var file in files)
                 {
-                    // Handle deletion event differently if needed
-                    return;
+                    var fileName = Path.GetFileName(file);
+                    await ProcessFile(fileName, file, folderConfig);
                 }
-
-                var processedFiles = new List<string>();
-
-                if (!string.IsNullOrEmpty(e.Name)) processedFiles.Add(e.Name);
-
-                if (!processedFiles.Any())
-                {
-                    IncrementFilesWithIssues(e.Name ?? "UnknownFile", "File Not Exist", folderConfig.Name ?? "UnknownName", folderConfig.Path);
-                    return;
-                }
-
-                try
-                {
-                    string apiUrlStoreFiles = $"{APIURLList.BaseURL}{APIURLList.ReceivesFileLogsAPI}"
-                               .Replace("{clientCode}", folderConfig.ClientCode)
-                               .Replace("{hostDetail}", _hostName);
-
-                    var storeResponse = await CallApiStoreFileLogsDataAsync(apiUrlStoreFiles, processedFiles);
-                    if (!storeResponse)
-                    {
-                        await MessageLoggerHelper.LogWarningAsync($"Error storing file logs", _logger, _notificationService);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
-                }
-
-                // Process file content
-                var fileContent = await ReadFileWithRetryAsync(e.FullPath);
-                if (string.IsNullOrEmpty(fileContent))
-                {
-                    IncrementFilesWithIssues(e.Name ?? "UnknownFile", "File content is empty or null for file", folderConfig.Name ?? "UnknownName", folderConfig.Path);
-                    await MessageLoggerHelper.LogWarningAsync($"File content is empty or null for file: {e.FullPath}", _logger, _notificationService);
-                    return;
-                }
-
-                // Prepare API URL
-                var apiUrl = $"{APIURLList.BaseURL}{APIURLList.ReceivesStationEnvDataAPI}"
-                            .Replace("{clientCode}", folderConfig.ClientCode)
-                            .Replace("{transMode}", "GPRS")
-                            .Replace("{hostDetail}", _hostName);
-
-                // Call API
-                var response = await CallApiAsync(apiUrl, fileContent);
-                if (!response.IsSuccess)
-                {
-                    IncrementFilesWithIssues(e.Name ?? "UnknownFile", response.Message ?? "Unknown error", folderConfig.Name ?? "UnknownName", folderConfig.Path);
-                    await MessageLoggerHelper.LogWarningAsync($"{response.Message}: {e.Name}", _logger, _notificationService);
-                    return;
-                }
-
-                if (folderConfig.EnableMoving)
-                {
-                    await MoveFile(e.FullPath, folderConfig);
-                }
-
-                await MessageLoggerHelper.LogMessageAsync($"Complete processing: {e.Name}", _logger, _notificationService);
             }
             catch (Exception ex)
             {
                 await MessageLoggerHelper.LogErrorAsync(ex, $"Error processing file event: {e.FullPath}", _logger, _notificationService);
             }
+        }
+
+        private bool IsDuplicateEvent(string path)
+        {
+            lock (_lastProcessedFiles)
+            {
+                if (_lastProcessedFiles.TryGetValue(path, out var lastTime))
+                {
+                    if ((DateTime.Now - lastTime) < _changeEventSuppressWindow)
+                    {
+                        // Duplicate event, skip processing
+                        return true;
+                    }
+                }
+                _lastProcessedFiles[path] = DateTime.Now;
+            }
+            return false;
         }
 
         private async Task<string?> ReadFileWithRetryAsync(string filePath, int maxAttempts = 5, int initialDelayMs = 200, int timeoutSeconds = 30)
@@ -412,23 +519,29 @@ namespace AWS2.FolderWatcherService
 
         public async Task MoveFile(string sourcePath, WatchedFolder folder)
         {
-            if (string.IsNullOrEmpty(folder.ArchiveFilePath))
+            if (string.IsNullOrEmpty(folder.ArchiveFolderPath))
             {
                 await MessageLoggerHelper.LogWarningAsync("ArchiveFilePath is null. Cannot move file.", _logger, _notificationService);
                 return;
             }
 
-            if (!Directory.Exists(folder.ArchiveFilePath))
+            if (!Directory.Exists(folder.ArchiveFolderPath))
             {
                 //await MessageLoggerHelper.LogWarningAsync($"Archive directory {folder.ArchiveFilePath} does not exist. Creating...", _logger, _notificationService);
-                Directory.CreateDirectory(folder.ArchiveFilePath);
+                Directory.CreateDirectory(folder.ArchiveFolderPath);
             }
 
             var fileName = Path.GetFileName(sourcePath);
-            var destPath = Path.Combine(folder.ArchiveFilePath, fileName);
+            var destPath = Path.Combine(folder.ArchiveFolderPath, fileName);
 
             try
             {
+                if (File.Exists(destPath))
+                {
+                    File.Delete(sourcePath);
+                    return;
+                }
+
                 File.Move(sourcePath, destPath);
                 await MessageLoggerHelper.LogMessageAsync($"Moved file from {sourcePath} to {destPath}", _logger, _notificationService);
             }
@@ -445,6 +558,298 @@ namespace AWS2.FolderWatcherService
             await ExceptionLoggerHelper.LogExceptionAsync(ex, _notificationService);
         }
 
+        private async Task<bool> ProcessFile(string fileName, string fullPath, WatchedFolder folderConfig)
+        {
+            try
+            {
+                var processedFiles = new List<string>();
+                if (!string.IsNullOrEmpty(fileName)) processedFiles.Add(fileName);
+
+                if (!processedFiles.Any())
+                {
+                    IncrementFilesWithIssues(fileName ?? "UnknownFile", "File Not Exist", folderConfig.Name ?? "UnknownName", folderConfig.FolderPath);
+                    return false;
+                }
+
+                //try
+                //{
+                //    string apiUrlStoreFiles = $"{APIURLList.BaseURL}{APIURLList.ReceivesFileLogsAPI}"
+                //               .Replace("{clientCode}", folderConfig.ClientCode)
+                //               .Replace("{hostDetail}", _hostName);
+
+                //    var storeResponse = await CallApiStoreFileLogsDataAsync(apiUrlStoreFiles, processedFiles);
+                //    if (!storeResponse)
+                //    {
+                //        await MessageLoggerHelper.LogWarningAsync($"Error storing file logs", _logger, _notificationService);
+                //    }
+                //}
+                //catch (Exception ex)
+                //{
+                //    await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
+                //}
+
+
+                // Process file content
+                var fileContent = await ReadFileWithRetryAsync(fullPath);
+                if (string.IsNullOrEmpty(fileContent))
+                {
+                    IncrementFilesWithIssues(fileName ?? "UnknownFile", "File content is empty or null for file", folderConfig.Name ?? "UnknownName", folderConfig.FolderPath);
+                    await MessageLoggerHelper.LogWarningAsync($"File content is empty or null for file: {fullPath}", _logger, _notificationService);
+                    return false;
+                }
+
+                // Prepare API URL
+                var apiUrl = $"{APIURLList.BaseURL}{APIURLList.ReceivesStationEnvDataAPI}"
+                            .Replace("{clientCode}", folderConfig.ClientCode)
+                            .Replace("{transMode}", "GPRS")
+                            .Replace("{hostDetail}", _hostName);
+
+                // Call API
+                //var response = await CallApiAsync(apiUrl, fileContent);
+                //if (!response.IsSuccess)
+                //{
+                //    IncrementFilesWithIssues(fileName ?? "UnknownFile", response.Message ?? "Unknown error", folderConfig.Name ?? "UnknownName", folderConfig.FolderPath);
+                //    await MessageLoggerHelper.LogWarningAsync($"{response.Message}: {fileName}", _logger, _notificationService);
+                //    return false;
+                //}
+
+                // FTP copy if enabled
+                if (folderConfig.CopyFileForOtherServer && !string.IsNullOrEmpty(folderConfig.CopyFileFtpServerName))
+                {
+                    await CopyFileToFtpAsync(fullPath, folderConfig);
+                }
+
+                if (folderConfig.EnableMovingForArchiveFolder)
+                {
+                    await MoveFile(fullPath, folderConfig);
+                }
+
+                await MessageLoggerHelper.LogMessageAsync($"Complete processing: {fileName}", _logger, _notificationService);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
+                return false;
+            }
+        }
+
+        private async Task CopyFileToFtpAsync(string filePath, WatchedFolder folderConfig)
+        {
+            string fileName = Path.GetFileName(filePath);
+
+            try
+            {
+                // Prepare FTP connection details
+                var ftpServer = folderConfig.CopyFileFtpServerName;
+                var ftpUser = folderConfig.CopyFileFtpUsername ?? string.Empty;
+                var ftpPass = folderConfig.CopyFileFtpPassword ?? string.Empty;
+                var ftpDir = (folderConfig.CopyFileFtpAccessDirectory ?? "/").TrimEnd('/');
+                var ftpPort = folderConfig.CopyFileFtpPort;
+                var useSsl = folderConfig.CopyFileSecure;
+
+                var ftpUri = new Uri($"{ftpServer}:{ftpPort}/{ftpDir}/{fileName}");
+
+                if (ftpUri.Scheme.Equals("ftp", StringComparison.OrdinalIgnoreCase) || ftpUri.Scheme.Equals("ftps", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Configure common request settings
+                    void ConfigureRequest(FtpWebRequest request)
+                    {
+                        request.Credentials = new NetworkCredential(ftpUser, ftpPass);
+                        request.EnableSsl = useSsl;
+                        request.UseBinary = true;
+                        request.UsePassive = true;
+                    }
+
+                    // Check if file exists on FTP (only if needed)
+                    if (!await CheckFtpFileExistsAsync(ftpUri, ConfigureRequest))
+                    {
+                        await UploadFileToFtpAsync(filePath, ftpUri, ConfigureRequest);
+                        await MessageLoggerHelper.LogMessageAsync($"FTP uploaded: {fileName}", _logger, _notificationService);
+                        return;
+                    }
+                    await MessageLoggerHelper.LogMessageAsync($"FTP file already exists, skipping upload: {fileName}", _logger, _notificationService);
+                    return;
+                }
+
+                if (ftpUri.Scheme.Equals("sftp", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Build the remote SFTP path
+                    var remotePath = $"{(folderConfig.CopyFileFtpAccessDirectory ?? "/").TrimEnd('/')}/{fileName}";
+
+                    // Use actual credentials from config
+                    var sftpCreds = new NetworkCredential(
+                        folderConfig.CopyFileFtpUsername ?? string.Empty,
+                        folderConfig.CopyFileFtpPassword ?? string.Empty
+                    );
+
+                    // Pass remotePath as the third argument, and null for configureClient
+                    if (!await CheckSftpFileExistsAsync(ftpUri, sftpCreds, remotePath))
+                    {
+                        await UploadFileToSftpAsync(filePath, ftpUri, sftpCreds, remotePath);
+                        await MessageLoggerHelper.LogMessageAsync($"SFTP uploaded: {fileName}", _logger, _notificationService);
+                        return;
+
+                    }
+                    await MessageLoggerHelper.LogMessageAsync($"SFTP file already exists, skipping upload: {fileName}", _logger, _notificationService);
+                    return;
+                }
+                throw new NotSupportedException($"Unsupported protocol: {ftpUri.Scheme}");
+            }
+            catch (Exception ex)
+            {
+                IncrementFilesWithIssues(fileName, $"FTP copy failed: {ex.Message}", folderConfig.Name, folderConfig.FolderPath);
+                await MessageLoggerHelper.LogErrorAsync(ex, $"FTP copy failed for file: {filePath}", _logger, _notificationService);
+            }
+        }
+
+        private async Task<bool> CheckFtpFileExistsAsync(Uri ftpUri, Action<FtpWebRequest> configureRequest)
+        {
+            try
+            {
+                var checkRequest = (FtpWebRequest)WebRequest.Create(ftpUri);
+                checkRequest.Method = WebRequestMethods.Ftp.GetFileSize;
+                configureRequest(checkRequest);
+
+                using (var checkResponse = (FtpWebResponse)await checkRequest.GetResponseAsync())
+                {
+                    return true;
+                }
+            }
+            catch (WebException ex) when (ex.Response is FtpWebResponse ftpResponse &&
+                                         ftpResponse.StatusCode == FtpStatusCode.ActionNotTakenFileUnavailable)
+            {
+                return false;
+            }
+            catch (WebException ex)
+            {
+                throw new Exception($"FTP check failed: {ex.Message}", ex);
+            }
+        }
+
+        private async Task<bool> CheckSftpFileExistsAsync(Uri sftpUri, NetworkCredential credentials, string remotePath)
+        {
+            try
+            {
+                using (var client = new SftpClient(sftpUri.Host, sftpUri.Port, credentials.UserName, credentials.Password))
+                {
+                    await Task.Run(() => client.Connect());
+
+                    if (!client.IsConnected)
+                        throw new Exception("Failed to connect to SFTP server");
+
+                    return await Task.Run(() => client.Exists(remotePath));
+                }
+            }
+            catch (Renci.SshNet.Common.SshAuthenticationException)
+            {
+                throw new Exception("SFTP authentication failed");
+            }
+            catch (Renci.SshNet.Common.SshConnectionException)
+            {
+                throw new Exception("SFTP connection failed");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"SFTP check failed: {ex.Message}");
+            }
+        }
+
+        private async Task UploadFileToFtpAsync(string filePath, Uri ftpUri, Action<FtpWebRequest> configureRequest)
+        {
+            var request = (FtpWebRequest)WebRequest.Create(ftpUri);
+            request.Method = WebRequestMethods.Ftp.UploadFile;
+            configureRequest(request);
+
+            // Stream directly from file to FTP without loading entire file into memory
+            using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+                                                  bufferSize: 81920, // Optimal buffer size
+                                                  useAsync: true))
+            using (var requestStream = await request.GetRequestStreamAsync())
+            {
+                await fileStream.CopyToAsync(requestStream);
+            }
+
+            // Verify upload completed successfully
+            using (var response = (FtpWebResponse)await request.GetResponseAsync())
+            {
+                if (response.StatusCode != FtpStatusCode.ClosingData)
+                {
+                    throw new Exception($"FTP upload failed with status: {response.StatusDescription}");
+                }
+            }
+        }
+
+        private async Task UploadFileToSftpAsync(string localPath, Uri sftpUri, NetworkCredential credentials, string remotePath)
+        {
+            try
+            {
+                using (var client = new SftpClient(sftpUri.Host, sftpUri.Port, credentials.UserName, credentials.Password))
+                {
+                    try
+                    {
+                        // Connect with timeout
+                        client.OperationTimeout = TimeSpan.FromSeconds(30);
+                        await Task.Run(() => client.Connect());
+
+                        if (!client.IsConnected)
+                            throw new Exception("Failed to connect to SFTP server");
+
+                        // Ensure remote directory exists
+                        var directoryPath = Path.GetDirectoryName(remotePath);
+                        if (!string.IsNullOrEmpty(directoryPath))
+                        {
+                            await CreateRemoteDirectoryIfNotExists(client, directoryPath);
+                        }
+
+                        // Upload file with retry logic
+                        using (var fileStream = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 81920, useAsync: true))
+                        {
+                            await Task.Run(() => client.UploadFile(fileStream, remotePath));
+                            return;
+                        }
+                    }
+                    catch (Renci.SshNet.Common.SftpPathNotFoundException ex)
+                    {
+                        throw new Exception($"Remote directory not found: {ex.Message}");
+                    }
+                    catch (Renci.SshNet.Common.SftpPermissionDeniedException ex)
+                    {
+                        throw new Exception($"Permission denied: {ex.Message}");
+                    }
+                    finally
+                    {
+                        if (client.IsConnected)
+                        {
+                            client.Disconnect();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"SFTP upload failed: {ex.Message}");
+            }
+        }
+
+        private async Task CreateRemoteDirectoryIfNotExists(SftpClient client, string directoryPath)
+        {
+            try
+            {
+                // Check if directory exists
+                if (!await Task.Run(() => client.Exists(directoryPath)))
+                {
+                    // Create directory recursively
+                    await Task.Run(() => client.CreateDirectory(directoryPath));
+                    await MessageLoggerHelper.LogMessageAsync($"Created remote directory: {directoryPath}",
+                        _logger, _notificationService);
+                }
+            }
+            catch (Renci.SshNet.Common.SftpPermissionDeniedException ex)
+            {
+                throw new Exception($"Cannot create directory - permission denied: {directoryPath}", ex);
+            }
+        }
 
         public override void Dispose()
         {

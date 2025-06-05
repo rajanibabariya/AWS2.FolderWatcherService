@@ -9,15 +9,34 @@ namespace AWS2.FolderWatcherService.Models
 {
     public class WatchedFolder
     {
+        public int? Id { get; set; }
         public string? Name { get; set; }
-        public required string Path { get; set; }
-        public string? ArchiveFilePath { get; set; }
-        public required string ClientCode { get; set; }
-        public bool IncludeSubdirectories { get; set; }
-        public bool EnableMoving { get; set; } = true;
-        public bool SendEmailAlerts { get; set; }
-        public bool SendHttpAlerts { get; set; }
-        public string? HttpAlertUrl { get; set; }
+        public string? FolderPath { get; set; }
+        public string? ArchiveFolderPath { get; set; }
+        public string? ClientCode { get; set; }
+        public bool IncludeSubDirectories { get; set; } = false;
+        public bool EnableMovingForArchiveFolder { get; set; } = false;
+        public string? CopyFileFtpServerName { get; set; }
+        public string? CopyFileFtpUsername { get; set; }
+        public string? CopyFileFtpPassword { get; set; }
+        public string? CopyFileFtpAccessDirectory { get; set; }
+        public bool CopyFileSecure { get; set; } = false;
+        public int CopyFileFtpPort { get; set; }
+        public bool CopyFileForOtherServer { get; set; } = false;
+
+        //public string? Name { get; set; }
+        //public required string FolderPath { get; set; }
+        //public string? ArchiveFolderPath { get; set; }
+        //public required string ClientCode { get; set; }
+        //public bool IncludeSubDirectories { get; set; }
+        //public bool EnableMovingForArchiveFolder { get; set; } = true;
+        //public bool CopyFileForOtherServer { get; set; } = false;
+        //public string? CopyFileFTPServerName { get; set; }
+        //public string? CopyFileFTPUsername { get; set; }
+        //public string? CopyFileFTPPassword { get; set; }
+        //public string? CopyFileFTPAccessDirectory { get; set; }
+        //public bool? CopyFileSecure { get; set; }
+        //public int? CopyFileFtpPort { get; set; }    
     }
 
     public class NotificationMessage
