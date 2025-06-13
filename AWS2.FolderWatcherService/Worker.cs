@@ -571,22 +571,22 @@ namespace AWS2.FolderWatcherService
                     return false;
                 }
 
-                //try
-                //{
-                //    string apiUrlStoreFiles = $"{APIURLList.BaseURL}{APIURLList.ReceivesFileLogsAPI}"
-                //               .Replace("{clientCode}", folderConfig.ClientCode)
-                //               .Replace("{hostDetail}", _hostName);
+                try
+                {
+                    string apiUrlStoreFiles = $"{APIURLList.BaseURL}{APIURLList.ReceivesFileLogsAPI}"
+                               .Replace("{clientCode}", folderConfig.ClientCode)
+                               .Replace("{hostDetail}", _hostName);
 
-                //    var storeResponse = await CallApiStoreFileLogsDataAsync(apiUrlStoreFiles, processedFiles);
-                //    if (!storeResponse)
-                //    {
-                //        await MessageLoggerHelper.LogWarningAsync($"Error storing file logs", _logger, _notificationService);
-                //    }
-                //}
-                //catch (Exception ex)
-                //{
-                //    await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
-                //}
+                    var storeResponse = await CallApiStoreFileLogsDataAsync(apiUrlStoreFiles, processedFiles);
+                    if (!storeResponse)
+                    {
+                        await MessageLoggerHelper.LogWarningAsync($"Error storing file logs", _logger, _notificationService);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await MessageLoggerHelper.LogErrorAsync(ex, $"Exception storing file logs -> {ex.Message}", _logger, _notificationService);
+                }
 
 
                 // Process file content
@@ -605,13 +605,13 @@ namespace AWS2.FolderWatcherService
                             .Replace("{hostDetail}", _hostName);
 
                 // Call API
-                //var response = await CallApiAsync(apiUrl, fileContent);
-                //if (!response.IsSuccess)
-                //{
-                //    IncrementFilesWithIssues(fileName ?? "UnknownFile", response.Message ?? "Unknown error", folderConfig.Name ?? "UnknownName", folderConfig.FolderPath);
-                //    await MessageLoggerHelper.LogWarningAsync($"{response.Message}: {fileName}", _logger, _notificationService);
-                //    return false;
-                //}
+                var response = await CallApiAsync(apiUrl, fileContent);
+                if (!response.IsSuccess)
+                {
+                    IncrementFilesWithIssues(fileName ?? "UnknownFile", response.Message ?? "Unknown error", folderConfig.Name ?? "UnknownName", folderConfig.FolderPath);
+                    await MessageLoggerHelper.LogWarningAsync($"{response.Message}: {fileName}", _logger, _notificationService);
+                    return false;
+                }
 
                 // FTP copy if enabled
                 if (folderConfig.CopyFileForOtherServer && !string.IsNullOrEmpty(folderConfig.CopyFileFtpServerName))

@@ -14,7 +14,8 @@ namespace AWS2.FolderWatcherService.Helpers
 
     public class APIURLList
     {
-        public const string BaseURL = "http://20.198.113.129:8891/api/";
+        public const string BaseURL = "https://apiportal.azistaaerospace.com/api/";
+        //public const string BaseURL = "http://20.198.113.129:8891/api/";
         public static string ReceivesStationEnvDataAPI = "DataLoggerReceiver/StationEnvDataReceives/ReceivesStationEnvData/{clientCode}/{transMode}/{hostDetail}";
         public const string ReceivesFileLogsAPI = "DataLoggerReceiver/StationEnvDataReceives/ReceivesFileLogs/{clientCode}/{hostDetail}";
         public const string GetFileWatcherConfigAPI = "UserAuthenticate/GetFileWatcherConfiguration";
