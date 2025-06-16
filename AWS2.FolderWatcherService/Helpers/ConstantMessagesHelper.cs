@@ -19,5 +19,6 @@ namespace AWS2.FolderWatcherService.Helpers
         public static string ReceivesStationEnvDataAPI = "DataLoggerReceiver/StationEnvDataReceives/ReceivesStationEnvData/{clientCode}/{transMode}/{hostDetail}";
         public const string ReceivesFileLogsAPI = "DataLoggerReceiver/StationEnvDataReceives/ReceivesFileLogs/{clientCode}/{hostDetail}";
         public const string GetFileWatcherConfigAPI = "UserAuthenticate/GetFileWatcherConfiguration";
+        public const string CheckFileNameLogsAPI = "DataLoggerReceiver/StationEnvDataReceives/CheckFileName/{clientCode}/{fileName}";
     }
 }
