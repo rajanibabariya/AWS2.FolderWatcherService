@@ -15,7 +15,8 @@ namespace AWS2.FolderWatcherService
         private readonly ILogger<Worker> _logger;
         private readonly IConfiguration _config;
         private readonly List<FileSystemWatcher> _watchers = new();
-        private readonly string _hostName = Dns.GetHostName();
+        //private readonly string _hostName = Dns.GetHostName();
+        private readonly string _hostName = "Demo";
 
         private readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
         private readonly INotificationService _notificationService;
@@ -369,6 +370,10 @@ namespace AWS2.FolderWatcherService
                     return;
 
                 if (!File.Exists(e.FullPath)) return;
+
+                // Accept only .csv files
+                if (!e.FullPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                    return;
 
                 IncrementFilesProcessed();
                 await MessageLoggerHelper.LogMessageAsync($"File {eventType}: {e.FullPath}", _logger, _notificationService);
